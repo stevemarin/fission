@@ -1,0 +1,10 @@
+{
+    // Keep Pylance for completions/navigation, but silence all of its diagnostics
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.ignore": ["**"],
+
+    // Use mypy (from the project's .venv) for type checking
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "mypy-type-checker.importStrategy": "fromEnvironment",
+    "mypy-type-checker.reportingScope": "workspace"
+}
