@@ -2,7 +2,7 @@
 
 Unit tests use small hand-written records. The physics tests read the real
 ENDF/B-VIII.1 files and compare with independently published values; they are
-skipped when the data has not been downloaded (python -m nodal.data ...).
+skipped when the data has not been downloaded (python -m fission.data ...).
 """
 
 import math
@@ -10,10 +10,10 @@ import math
 import pytest
 from helpers import endf_line
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation, Tabulated1D, mt_name
-from nodal.endf.interpolation import HISTOGRAM, LIN_LIN, LIN_LOG, LOG_LIN, LOG_LOG
-from nodal.endf.records import Cursor, parse_float
+from fission.data import EndfLibrary
+from fission.endf import Evaluation, Tabulated1D, mt_name
+from fission.endf.interpolation import HISTOGRAM, LIN_LIN, LIN_LOG, LOG_LIN, LOG_LOG
+from fission.endf.records import Cursor, parse_float
 
 
 # ------------------------------------------------------------------ records

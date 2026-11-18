@@ -2,9 +2,9 @@
 
 import pytest
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation, cache
-from nodal.endf.pointwise import pointwise
+from fission.data import EndfLibrary
+from fission.endf import Evaluation, cache
+from fission.endf.pointwise import pointwise
 
 
 @pytest.fixture(scope="module")

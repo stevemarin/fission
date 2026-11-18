@@ -280,6 +280,6 @@ no resonance parameters at all (LRP = 0); for them MF3 is complete.
   free).
 * [[Blatt & Weisskopf](#ref-blattweisskopf)] ch. VIII–X: compound nucleus and
   resonance reactions (not free; inexpensive reprint).
-* Code: [`channel.py`](../../src/nodal/endf/channel.py) (wave number,
-  $P_l$, $S_l$, $\varphi_l$, $g_J$), [`resonances.py`](../../src/nodal/endf/resonances.py)
+* Code: [`channel.py`](../../src/fission/endf/channel.py) (wave number,
+  $P_l$, $S_l$, $\varphi_l$, $g_J$), [`resonances.py`](../../src/fission/endf/resonances.py)
   (reading MF2), and the Rust port [`channel.rs`](../../rust/src/channel.rs).

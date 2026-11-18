@@ -5,16 +5,16 @@ import random
 
 import pytest
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation, fast
-from nodal.endf.pointwise import (
+from fission.data import EndfLibrary
+from fission.endf import Evaluation, fast
+from fission.endf.pointwise import (
     SHADE,
     evaluated_total_inconsistency,
     partial_mts,
     pointwise,
     shaded_points,
 )
-from nodal.endf.reconstruct import resolved_range_xs
+from fission.endf.reconstruct import resolved_range_xs
 
 
 def test_shading_splits_repeated_energies():

@@ -146,7 +146,7 @@ def slbw(
 def main(argv: list[str] | None = None) -> None:
     """Scan SLBW cross sections across one resonance.
 
-    uv run python -m nodal.endf.slbw U238 6.674
+    uv run python -m fission.endf.slbw U238 6.674
     """
     import argparse
 
@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> None:
     from .evaluation import Evaluation
 
     ap = argparse.ArgumentParser(
-        prog="python -m nodal.endf.slbw", description=main.__doc__
+        prog="python -m fission.endf.slbw", description=main.__doc__
     )
     ap.add_argument("nuclide")
     ap.add_argument("energy", type=float, help="approximate resonance energy (eV)")

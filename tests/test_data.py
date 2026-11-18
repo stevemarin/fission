@@ -1,4 +1,4 @@
-"""Offline tests for nodal.data: a tiny fake library stands in for the NNDC."""
+"""Offline tests for fission.data: a tiny fake library stands in for the NNDC."""
 
 import hashlib
 import io
@@ -9,8 +9,8 @@ from typing import ClassVar
 
 import pytest
 
-from nodal import data
-from nodal.data import EndfLibrary, _neutron_file_stem
+from fission import data
+from fission.data import EndfLibrary, _neutron_file_stem
 
 FILES = {
     "neutrons": {

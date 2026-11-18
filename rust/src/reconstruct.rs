@@ -1,4 +1,4 @@
-//! Adaptive pointwise reconstruction. Rust port of `nodal/endf/reconstruct.py`.
+//! Adaptive pointwise reconstruction. Rust port of `fission/endf/reconstruct.py`.
 
 /// Midpoint test for all three reactions. Mirrors `_converged`.
 fn converged(left: &[f64; 3], mid: &[f64; 3], right: &[f64; 3], tol: f64, atol: f64) -> bool {

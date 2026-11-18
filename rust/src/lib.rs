@@ -1,7 +1,7 @@
-//! Compute kernels for `nodal`, exposed to Python as `nodal._rust`.
+//! Compute kernels for `fission`, exposed to Python as `fission._rust`.
 //!
 //! Every kernel here is a port of a Python reference implementation in
-//! `src/nodal`; tests/test_rust_parity.py checks that the two agree.
+//! `src/fission`; tests/test_rust_parity.py checks that the two agree.
 
 pub mod channel;
 pub mod complex;
@@ -55,8 +55,8 @@ fn evaluate_many<'py, R: Resonances>(
     Ok((a.into_pyarray(py), b.into_pyarray(py), c.into_pyarray(py)))
 }
 
-/// Reich-Moore resolved-range cross sections (port of `nodal.endf.reich_moore`).
-#[pyclass(module = "nodal._rust", name = "ReichMoore", frozen)]
+/// Reich-Moore resolved-range cross sections (port of `fission.endf.reich_moore`).
+#[pyclass(module = "fission._rust", name = "ReichMoore", frozen)]
 struct PyReichMoore {
     inner: reich_moore::ReichMoore,
 }
@@ -87,8 +87,8 @@ impl PyReichMoore {
     }
 }
 
-/// Multi-Level Breit-Wigner cross sections (port of `nodal.endf.mlbw`).
-#[pyclass(module = "nodal._rust", name = "Mlbw", frozen)]
+/// Multi-Level Breit-Wigner cross sections (port of `fission.endf.mlbw`).
+#[pyclass(module = "fission._rust", name = "Mlbw", frozen)]
 struct PyMlbw {
     inner: mlbw::Mlbw,
 }
@@ -136,7 +136,7 @@ impl Model<'_> {
 }
 
 /// Adaptive reconstruction of resonance + background cross sections
-/// (port of `nodal.endf.reconstruct.adaptive_grid` with `resolved_range_xs`).
+/// (port of `fission.endf.reconstruct.adaptive_grid` with `resolved_range_xs`).
 ///
 /// `model` is a ReichMoore or Mlbw object; `backgrounds` holds three optional
 /// Python `Tabulated1D` objects (elastic, capture, fission MF3 sections).

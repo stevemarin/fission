@@ -1,4 +1,4 @@
-//! ENDF tabulated functions. Rust port of `nodal/endf/interpolation.py`.
+//! ENDF tabulated functions. Rust port of `fission/endf/interpolation.py`.
 
 /// A function y(x) on ENDF points and interpolation regions.
 /// Extracted from a Python `Tabulated1D` by attribute name.

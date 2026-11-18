@@ -196,7 +196,7 @@ def reconstruct(
 ) -> PointwiseXS:
     """Pointwise resolved-range cross sections of an evaluation (default: whole range).
 
-    Pure-Python reference; `nodal.endf.fast.reconstruct` is the Rust port.
+    Pure-Python reference; `fission.endf.fast.reconstruct` is the Rust port.
     """
     _, f = resolved_range_xs(ev)
     energies, values = adaptive_grid(f, reconstruction_seeds(ev, lo, hi), tol, atol)

@@ -1,8 +1,8 @@
 [package]
-name = "nodal-rust"
+name = "fission-rust"
 version = "0.1.0"
 edition = "2024"
-description = "Compute kernels for the nodal lattice-physics code (Rust ports of Python references)"
+description = "Compute kernels for the fission lattice-physics code (Rust ports of Python references)"
 publish = false
 
 [lib]

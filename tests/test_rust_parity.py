@@ -1,4 +1,4 @@
-"""Rust kernels (nodal._rust) must reproduce the Python references.
+"""Rust kernels (fission._rust) must reproduce the Python references.
 
 Tolerances are set by floating-point order of operations: the ports follow
 the Python code step by step, so agreement is at the 1e-12 level or better.
@@ -10,14 +10,14 @@ import random
 import numpy as np
 import pytest
 
-from nodal import _rust
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation, Tabulated1D, fast
-from nodal.endf.channel import K_CONSTANT
-from nodal.endf.mlbw import mlbw
-from nodal.endf.reconstruct import reconstruct
-from nodal.endf.reich_moore import reich_moore
-from nodal.endf.resonances import LGroup, ResolvedRange, Resonance
+from fission import _rust
+from fission.data import EndfLibrary
+from fission.endf import Evaluation, Tabulated1D, fast
+from fission.endf.channel import K_CONSTANT
+from fission.endf.mlbw import mlbw
+from fission.endf.reconstruct import reconstruct
+from fission.endf.reich_moore import reich_moore
+from fission.endf.resonances import LGroup, ResolvedRange, Resonance
 
 REL = 1e-12
 

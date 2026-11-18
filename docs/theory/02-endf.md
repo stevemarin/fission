@@ -212,9 +212,9 @@ rather than trusting MT1 (section 7.4).
   (free).
 * [[ENDF/B-VIII.1](#ref-endfb81)]: what is new in the current library (free,
   arXiv).
-* Code: [`records.py`](../../src/nodal/endf/records.py) (records),
-  [`interpolation.py`](../../src/nodal/endf/interpolation.py) (laws),
-  [`evaluation.py`](../../src/nodal/endf/evaluation.py) (header, MF3),
-  [`reactions.py`](../../src/nodal/endf/reactions.py) (MT names),
-  [`pointwise.py`](../../src/nodal/endf/pointwise.py) (`partial_mts`),
-  [`data.py`](../../src/nodal/data.py) (downloading the library).
+* Code: [`records.py`](../../src/fission/endf/records.py) (records),
+  [`interpolation.py`](../../src/fission/endf/interpolation.py) (laws),
+  [`evaluation.py`](../../src/fission/endf/evaluation.py) (header, MF3),
+  [`reactions.py`](../../src/fission/endf/reactions.py) (MT names),
+  [`pointwise.py`](../../src/fission/endf/pointwise.py) (`partial_mts`),
+  [`data.py`](../../src/fission/data.py) (downloading the library).

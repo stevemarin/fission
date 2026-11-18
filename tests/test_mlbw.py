@@ -2,12 +2,12 @@
 
 import pytest
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation
-from nodal.endf.mlbw import mlbw
-from nodal.endf.reconstruct import resolved_range_xs
-from nodal.endf.resonances import LGroup, ResolvedRange, Resonance
-from nodal.endf.slbw import slbw
+from fission.data import EndfLibrary
+from fission.endf import Evaluation
+from fission.endf.mlbw import mlbw
+from fission.endf.reconstruct import resolved_range_xs
+from fission.endf.resonances import LGroup, ResolvedRange, Resonance
+from fission.endf.slbw import slbw
 
 
 def one_level(res, spi=0.0, l=0):

@@ -124,8 +124,8 @@ those of zirconium, where resonances are mostly narrow and fission is absent.
 * [[ENDF-102](#ref-endf102)] §D.1.2 and §2.4.12 (the equivalent
   "Adler–Gauss" form with only $N$ terms instead of $N^2$) (free).
 * [[Fröhner](#ref-frohner)] §3.3.3 (free).
-* Code: [`mlbw.py`](../../src/nodal/endf/mlbw.py) (reference) and its Rust
+* Code: [`mlbw.py`](../../src/fission/endf/mlbw.py) (reference) and its Rust
   port [`mlbw.rs`](../../rust/src/mlbw.rs). The potential-scattering
   bookkeeping is `potential_terms` in
-  [`reich_moore.py`](../../src/nodal/endf/reich_moore.py), shared by both
+  [`reich_moore.py`](../../src/fission/endf/reich_moore.py), shared by both
   formalisms.

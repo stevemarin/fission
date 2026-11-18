@@ -172,6 +172,6 @@ lattice physics.
   slowing down (free, MIT OpenCourseWare).
 * [[Lamarsh](#ref-lamarsh)], ch. 2–3; [[Duderstadt & Hamilton](#ref-dh)],
   ch. 2 (standard textbooks, not free).
-* Code: [`pointwise.py`](../../src/nodal/endf/pointwise.py) builds the
+* Code: [`pointwise.py`](../../src/fission/endf/pointwise.py) builds the
   full-range tables used for the figures and the resonance integral
   (`PointwiseTable.integral_over_e`).

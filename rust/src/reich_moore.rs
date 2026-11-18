@@ -1,4 +1,4 @@
-//! Reich-Moore cross sections. Rust port of `nodal/endf/reich_moore.py`.
+//! Reich-Moore cross sections. Rust port of `fission/endf/reich_moore.py`.
 //!
 //! The physics and the order of operations follow the Python reference; the
 //! one structural difference is that per-resonance quantities that do not

@@ -19,13 +19,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation, fast
-from nodal.endf.cache import cached_pointwise
-from nodal.endf.channel import penetrability_shift_phase
-from nodal.endf.interpolation import interpolate
-from nodal.endf.reconstruct import reconstruct
-from nodal.endf.slbw import potential_scattering, slbw
+from fission.data import EndfLibrary
+from fission.endf import Evaluation, fast
+from fission.endf.cache import cached_pointwise
+from fission.endf.channel import penetrability_shift_phase
+from fission.endf.interpolation import interpolate
+from fission.endf.reconstruct import reconstruct
+from fission.endf.slbw import potential_scattering, slbw
 
 OUT = Path(__file__).parent
 PREVIEW = (
@@ -45,6 +45,7 @@ plt.rcParams.update(
         "axes.spines.right": False,
         "legend.frameon": False,
         "svg.fonttype": "none",
+        "svg.hashsalt": "fission",  # stable element ids, so reruns give clean diffs
     }
 )
 C = ["#1f5fa8", "#d1495b", "#2e8b57", "#e09f3e", "#6a4c93", "#555555"]
@@ -52,7 +53,7 @@ C = ["#1f5fa8", "#d1495b", "#2e8b57", "#e09f3e", "#6a4c93", "#555555"]
 
 def save(fig, name):
     fig.tight_layout()
-    fig.savefig(OUT / f"{name}.svg")
+    fig.savefig(OUT / f"{name}.svg", metadata={"Date": None})
     if PREVIEW:  # optional PNG copies for a quick look
         fig.savefig(PREVIEW / f"{name}.png")
     plt.close(fig)

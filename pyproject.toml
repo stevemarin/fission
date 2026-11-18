@@ -1,7 +1,7 @@
 [project]
-name = "nodal"
+name = "fission"
 version = "0.1.0"
-description = "Multigroup 3D Cartesian nodal diffusion code (NEM + CMFD)"
+description = "Lattice physics from scratch: ENDF/B-VIII.1 processing, pin-cell transport, few-group constants"
 authors = [
     { name = "Steve Marin", email = "steve.marin@gmail.com" }
 ]
@@ -15,9 +15,9 @@ requires = ["maturin>=1.13,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
-# Python package in src/nodal; the Rust crate (Cargo.toml, rust/src) builds nodal._rust
+# Python package in src/fission; the Rust crate (Cargo.toml, rust/src) builds fission._rust
 python-source = "src"
-module-name = "nodal._rust"
+module-name = "fission._rust"
 
 [tool.uv]
 # rebuild the extension whenever Rust sources change

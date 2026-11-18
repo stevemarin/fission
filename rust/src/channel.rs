@@ -1,4 +1,4 @@
-//! Channel quantities. Rust port of `nodal/endf/channel.py`.
+//! Channel quantities. Rust port of `fission/endf/channel.py`.
 
 /// m_n c^2 (eV), CODATA 2018.
 pub const NEUTRON_MASS_EV: f64 = 939.56542052e6;

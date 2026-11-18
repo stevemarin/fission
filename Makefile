@@ -62,22 +62,22 @@ check: lint format-check typecheck test test-rust  ## everything CI would run (n
 
 # ---------------------------------------------------------------- data
 data:  ## fetch the ENDF/B-VIII.1 evaluations needed for the pin cell
-	$(PY) -m nodal.data $(PIN_NUCLIDES) --thermal $(PIN_THERMAL)
+	$(PY) -m fission.data $(PIN_NUCLIDES) --thermal $(PIN_THERMAL)
 
 show:  ## summarize an evaluation's header and MF3 (NUC=U238)
-	$(PY) -m nodal.endf $(NUC)
+	$(PY) -m fission.endf $(NUC)
 
 scan:  ## SLBW scan across a resonance (NUC=U238 E=6.674 WIDTHS=6)
-	$(PY) -m nodal.endf.slbw $(NUC) $(E) --widths $(WIDTHS)
+	$(PY) -m fission.endf.slbw $(NUC) $(E) --widths $(WIDTHS)
 
 tables:  ## build (or load) cached pointwise tables for the pin-cell nuclides
-	$(PY) -m nodal.endf.cache $(PIN_NUCLIDES) --list
+	$(PY) -m fission.endf.cache $(PIN_NUCLIDES) --list
 
 clean-tables:  ## delete all cached pointwise tables
 	rm -rf endf-data/pointwise
 
 rm:  ## Reich-Moore vs SLBW across a resonance (NUC=U238 E=6.674 WIDTHS=6)
-	$(PY) -m nodal.endf.reich_moore $(NUC) $(E) --widths $(WIDTHS)
+	$(PY) -m fission.endf.reich_moore $(NUC) $(E) --widths $(WIDTHS)
 
 # ---------------------------------------------------------------- documentation
 DOCS_MATH ?= --mathml

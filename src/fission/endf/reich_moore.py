@@ -218,7 +218,7 @@ def total_from_optical_theorem(rr: ResolvedRange, energy: float) -> float:
 def main(argv: list[str] | None = None) -> None:
     """Compare Reich-Moore and SLBW across one resonance.
 
-    uv run python -m nodal.endf.reich_moore U238 6.674
+    uv run python -m fission.endf.reich_moore U238 6.674
     """
     import argparse
 
@@ -227,7 +227,7 @@ def main(argv: list[str] | None = None) -> None:
     from .slbw import single_resonance, slbw
 
     ap = argparse.ArgumentParser(
-        prog="python -m nodal.endf.reich_moore", description=main.__doc__
+        prog="python -m fission.endf.reich_moore", description=main.__doc__
     )
     ap.add_argument("nuclide")
     ap.add_argument("energy", type=float, help="approximate resonance energy (eV)")

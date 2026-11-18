@@ -30,7 +30,7 @@ Typical use::
 
 or from the shell::
 
-    uv run python -m nodal.data U235 U238 O16 H1 --thermal HinH2O
+    uv run python -m fission.data U235 U238 O16 H1 --thermal HinH2O
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from pathlib import Path
 
 RELEASE = "B-VIII.1"
 BASE_URL = f"https://www.nndc.bnl.gov/endf-releases/releases/{RELEASE}"
-USER_AGENT = "nodal-endf-fetch/0.1"
+USER_AGENT = "fission-endf-fetch/0.1"
 CHUNK = 1 << 20  # 1 MiB
 
 
@@ -239,7 +239,7 @@ class EndfLibrary:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
-        prog="python -m nodal.data",
+        prog="python -m fission.data",
         description="Fetch ENDF/B-VIII.1 evaluations from the NNDC.",
     )
     ap.add_argument(

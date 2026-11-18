@@ -4,15 +4,15 @@ import math
 
 import pytest
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation
-from nodal.endf.channel import (
+from fission.data import EndfLibrary
+from fission.endf import Evaluation
+from fission.endf.channel import (
     K_CONSTANT,
     penetrability_shift_phase,
     spin_factor,
     wave_number,
 )
-from nodal.endf.slbw import potential_scattering, single_resonance, slbw
+from fission.endf.slbw import potential_scattering, single_resonance, slbw
 
 
 # ----------------------------------------------------- channel quantities

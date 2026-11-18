@@ -202,6 +202,6 @@ It is real, but six orders of magnitude below capture.
 * [[Bell & Glasstone](#ref-bell)] §8.1b (the SLBW formula) and §8.1e
   (overlap and interference of resonances) (free).
 * [[Breit & Wigner](#ref-breitwigner)], the original paper (not free).
-* Code: [`slbw.py`](../../src/nodal/endf/slbw.py) (`single_resonance`
+* Code: [`slbw.py`](../../src/fission/endf/slbw.py) (`single_resonance`
   returns every ingredient above; `slbw` sums the levels). Try
   `make scan NUC=U238 E=20.87`.

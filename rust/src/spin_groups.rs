@@ -1,5 +1,5 @@
 //! Inputs shared by the resonance formalisms, read directly from the Python
-//! objects built by `nodal.endf.reich_moore.spin_groups` / `potential_terms`.
+//! objects built by `fission.endf.reich_moore.spin_groups` / `potential_terms`.
 
 use crate::channel::{penetrability_shift_phase, wave_number};
 use std::f64::consts::PI;

@@ -1,7 +1,7 @@
 """Summarize an ENDF/B-VIII.1 evaluation: header and MF3 cross sections.
 
-uv run python -m nodal.endf U238
-uv run python -m nodal.endf H1 --energy 0.0253 1e6
+uv run python -m fission.endf U238
+uv run python -m fission.endf H1 --energy 0.0253 1e6
 """
 
 import argparse
@@ -14,7 +14,7 @@ THERMAL = 0.0253  # eV, neutron energy at 2200 m/s
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
-        prog="python -m nodal.endf",
+        prog="python -m fission.endf",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

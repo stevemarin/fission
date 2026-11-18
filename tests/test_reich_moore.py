@@ -4,16 +4,16 @@ import math
 
 import pytest
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation
-from nodal.endf.reich_moore import (
+from fission.data import EndfLibrary
+from fission.endf import Evaluation
+from fission.endf.reich_moore import (
     reich_moore,
     solve_spin_group,
     spin_groups,
     total_from_optical_theorem,
 )
-from nodal.endf.resonances import LGroup, ResolvedRange, Resonance
-from nodal.endf.slbw import slbw
+from fission.endf.resonances import LGroup, ResolvedRange, Resonance
+from fission.endf.slbw import slbw
 
 
 def one_level(resonance, spi=0.0, l=0):

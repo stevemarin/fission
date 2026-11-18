@@ -9,7 +9,7 @@ everything that determines the table:
 
 * the evaluation file's *contents* (not its name or date),
 * the parameters (tol, atol, lo, hi, requested MTs, Rust or Python),
-* a code fingerprint: every Python source file of nodal.endf plus the
+* a code fingerprint: every Python source file of fission.endf plus the
   compiled Rust extension. This is deliberately conservative: any edit, even
   a comment, triggers a rebuild, but a cached table can never silently
   outlive a change to the physics.
@@ -17,8 +17,8 @@ everything that determines the table:
 When a table built by newer code is written, entries for the same nuclide
 built by older code are deleted.
 
-    uv run python -m nodal.endf.cache U238 Zr90      # build or load
-    uv run python -m nodal.endf.cache --list
+    uv run python -m fission.endf.cache U238 Zr90      # build or load
+    uv run python -m fission.endf.cache --list
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _sha256_file(path: Path) -> str:
 
 @functools.cache
 def code_fingerprint() -> str:
-    """Hash of the code that produces tables: nodal.endf sources + Rust extension."""
+    """Hash of the code that produces tables: fission.endf sources + Rust extension."""
     digest = hashlib.sha256()
     package = Path(__file__).parent
     for source in sorted(package.glob("*.py")):
@@ -170,7 +170,7 @@ def cached_pointwise(
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(
-        prog="python -m nodal.endf.cache",
+        prog="python -m fission.endf.cache",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

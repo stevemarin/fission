@@ -1,4 +1,4 @@
-//! Multi-Level Breit-Wigner cross sections. Rust port of `nodal/endf/mlbw.py`
+//! Multi-Level Breit-Wigner cross sections. Rust port of `fission/endf/mlbw.py`
 //! (together with the single-level pieces it uses from `slbw.single_resonance`).
 //!
 //! Capture and fission are sums of single-level terms; elastic scattering uses

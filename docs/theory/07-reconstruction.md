@@ -205,9 +205,9 @@ give the same grid point for point.
   significant-figure control, resonance-integral thinning (free).
 * [[ENDF-102](#ref-endf102)] §2.3–2.4 on the unresolved range and LSSF
   (free).
-* Code: [`reconstruct.py`](../../src/nodal/endf/reconstruct.py)
+* Code: [`reconstruct.py`](../../src/fission/endf/reconstruct.py)
   (`adaptive_grid`, `seed_grid`, `PointwiseXS`),
-  [`pointwise.py`](../../src/nodal/endf/pointwise.py) (full-range tables,
+  [`pointwise.py`](../../src/fission/endf/pointwise.py) (full-range tables,
   shading, partials), [`reconstruct.rs`](../../rust/src/reconstruct.rs)
-  (Rust port), and [`cache.py`](../../src/nodal/endf/cache.py) (tables are
+  (Rust port), and [`cache.py`](../../src/fission/endf/cache.py) (tables are
   cached on disk, keyed by data, parameters and code).

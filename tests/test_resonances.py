@@ -3,10 +3,10 @@
 import pytest
 from helpers import endf_line
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation, ResolvedRange, UnresolvedRange
-from nodal.endf.records import Cursor
-from nodal.endf.resonances import EmptyRange, read_mf2
+from fission.data import EndfLibrary
+from fission.endf import Evaluation, ResolvedRange, UnresolvedRange
+from fission.endf.records import Cursor
+from fission.endf.resonances import EmptyRange, read_mf2
 
 
 def mf2(fields_per_line):

@@ -275,7 +275,7 @@ Chapter 7 needs this at about a million energies.
 * [[Lane & Thomas](#ref-lanethomas)], [[Reich & Moore](#ref-reichmoore)],
   [[Wigner & Eisenbud](#ref-wignereisenbud)]: the original papers (not
   free).
-* Code: [`reich_moore.py`](../../src/nodal/endf/reich_moore.py)
+* Code: [`reich_moore.py`](../../src/fission/endf/reich_moore.py)
   (`spin_groups`, `solve_spin_group`, `reich_moore`,
   `total_from_optical_theorem`) and its Rust port
   [`reich_moore.rs`](../../rust/src/reich_moore.rs). Try

@@ -1,4 +1,4 @@
-"""Rust-accelerated versions of the resonance kernels (`nodal._rust`).
+"""Rust-accelerated versions of the resonance kernels (`fission._rust`).
 
 Each function takes and returns the same objects as its Python reference, so
 the two are interchangeable; tests/test_rust_parity.py checks they agree.

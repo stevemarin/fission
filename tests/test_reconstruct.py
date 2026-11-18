@@ -5,17 +5,17 @@ import random
 
 import pytest
 
-from nodal.data import EndfLibrary
-from nodal.endf import Evaluation
-from nodal.endf.channel import wave_number
-from nodal.endf.reconstruct import (
+from fission.data import EndfLibrary
+from fission.endf import Evaluation
+from fission.endf.channel import wave_number
+from fission.endf.reconstruct import (
     PointwiseXS,
     adaptive_grid,
     reconstruct,
     resolved_range_xs,
 )
-from nodal.endf.reich_moore import reich_moore
-from nodal.endf.resonances import LGroup, ResolvedRange, Resonance
+from fission.endf.reich_moore import reich_moore
+from fission.endf.resonances import LGroup, ResolvedRange, Resonance
 
 
 def lorentzian(e):
