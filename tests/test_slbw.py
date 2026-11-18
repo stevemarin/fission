@@ -23,11 +23,19 @@ def riccati_bessel(l, rho):
         return s, c
     if l == 1:
         return s / rho - c, c / rho + s
-    return (3 / rho**2 - 1) * s - 3 * c / rho, (3 / rho**2 - 1) * c + 3 * s / rho
+    if l == 2:
+        return (3 / rho**2 - 1) * s - 3 * c / rho, (3 / rho**2 - 1) * c + 3 * s / rho
+    a, b = 15 / rho**3 - 6 / rho, 15 / rho**2 - 1
+    return a * s - b * c, a * c + b * s
 
 
-@pytest.mark.parametrize("l", [0, 1, 2])
-@pytest.mark.parametrize("rho", [0.01, 0.3, 1.0, 2.5])
+@pytest.mark.parametrize(
+    "l, rho",
+    [(l, r) for l in (0, 1, 2) for r in (0.01, 0.3, 1.0, 2.5)]
+    + [
+        (3, r) for r in (0.3, 1.0, 2.5, 5.0)
+    ],  # l=3 Bessel forms cancel badly at tiny rho
+)
 def test_hard_sphere_functions_match_bessel_definitions(l, rho):
     """P = rho/(F^2+G^2), S = rho (F F' + G G')/(F^2+G^2), phi = atan(F/G).
 

@@ -56,22 +56,29 @@ def channel_radius(awri: float, ap: float, naps: int) -> float:
 def penetrability_shift_phase(
     l: int, rho: float, rho_hat: float
 ) -> tuple[float, float, float]:
-    """(P_l(rho), S_l(rho), phi_l(rho_hat)) for a hard sphere, l = 0, 1, 2.
+    """(P_l(rho), S_l(rho), phi_l(rho_hat)) for a hard sphere, l = 0 ... 3.
 
     rho = k a (channel radius), rho_hat = k AP (scattering radius).
     """
     r2 = rho * rho
+    h2 = rho_hat * rho_hat
     if l == 0:
         return rho, 0.0, rho_hat
     if l == 1:
         return r2 * rho / (1 + r2), -1.0 / (1 + r2), rho_hat - math.atan(rho_hat)
     if l == 2:
         d = 9 + 3 * r2 + r2 * r2
-        h2 = rho_hat * rho_hat
         return (
             r2 * r2 * rho / d,
             -(18 + 3 * r2) / d,
             rho_hat - math.atan2(3 * rho_hat, 3 - h2),
+        )
+    if l == 3:
+        d = 225 + 45 * r2 + 6 * r2 * r2 + r2 * r2 * r2
+        return (
+            r2 * r2 * r2 * rho / d,
+            -(675 + 90 * r2 + 6 * r2 * r2) / d,
+            rho_hat - math.atan2(rho_hat * (15 - h2), 15 - 6 * h2),
         )
     raise NotImplementedError(f"l = {l} not implemented")
 
