@@ -16,10 +16,11 @@ SRC     := src tests docs/figures
 # nuclides and thermal scattering laws needed for the PWR pin cell
 PIN_NUCLIDES := H1 O16 U234 U235 U238 Zr90 Zr91 Zr92 Zr94 Zr96 B10 B11
 PIN_THERMAL  := HinH2O OinUO2 UinUO2
+TEMPS        ?= 293.6 600 900 1200
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        data tables clean-tables show scan rm docs figures clean
+        data tables doppler-tables clean-tables show scan rm doppler docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -73,11 +74,17 @@ scan:  ## SLBW scan across a resonance (NUC=U238 E=6.674 WIDTHS=6)
 tables:  ## build (or load) cached pointwise tables for the pin-cell nuclides
 	$(PY) -m fission.endf.cache $(PIN_NUCLIDES) --list
 
-clean-tables:  ## delete all cached pointwise tables
-	rm -rf endf-data/pointwise
+doppler-tables:  ## build (or load) Doppler-broadened tables (TEMPS="293.6 600 900 1200")
+	$(PY) -m fission.processing.cache $(PIN_NUCLIDES) --temps $(TEMPS)
+
+clean-tables:  ## delete all cached pointwise and broadened tables
+	rm -rf endf-data/pointwise endf-data/doppler
 
 rm:  ## Reich-Moore vs SLBW across a resonance (NUC=U238 E=6.674 WIDTHS=6)
 	$(PY) -m fission.endf.reich_moore $(NUC) $(E) --widths $(WIDTHS)
+
+doppler:  ## Doppler-broadened peak and area of one resonance vs T (NUC=U238 E=6.674)
+	$(PY) -m fission.processing.doppler $(NUC) $(E)
 
 # ---------------------------------------------------------------- documentation
 DOCS_MATH ?= --mathml

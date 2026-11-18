@@ -28,9 +28,10 @@ $$
 \;\xrightarrow{\text{adaptive grid}}\; \text{linear table}
 $$
 
-The tables built here are at **0 K** (no thermal motion of the target nuclei).
-Doppler broadening, the unresolved resonance range, and self-shielding come
-next; chapter 8 previews them.
+The tables are first built at **0 K** (no thermal motion of the target
+nuclei), then Doppler-broadened to the temperatures of a reactor. The
+unresolved resonance range, self-shielding and thermal scattering come next;
+chapter 9 previews them.
 
 ## How to read these notes {.unnumbered}
 
@@ -40,7 +41,7 @@ next; chapter 8 previews them.
 * Chapters 4–6 build the three resonance formalisms used by the nuclides in a
   PWR fuel pin, from the simplest (SLBW) to the most accurate (Reich–Moore).
   Each one fixes a defect of the previous one.
-* Chapter 7 turns formulas into tables.
+* Chapter 7 turns formulas into tables; chapter 8 heats them up.
 * Sections marked **(derivation)** can be skipped on a first reading; the
   results they derive are stated before them.
 

@@ -4,7 +4,7 @@ __pycache__/
 build/
 dist/
 wheels/
-*.egg-info'
+*.egg-info
 .mypy_cache
 .ruff_cache
 .pytest_cache
@@ -21,3 +21,4 @@ target/
 
 # Built documentation
 docs/build/
+docs/reference

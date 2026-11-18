@@ -43,6 +43,18 @@ $$
 
 For s-waves $S_0 = 0$, so $E_r' = E_r$.
 
+**Where the shifted energy comes from.** In R-matrix theory (chapter 6) a
+single level sits at $E_\lambda + \Delta(E)$, with the level shift $\Delta =
+-[S_l(E) - B]\,\gamma^2$, where $\gamma^2$ is the reduced width and $B$ a
+free boundary constant [[Lane & Thomas](#ref-lanethomas) §XII.1a]. Fitting a
+one-level formula to a measured peak implicitly chooses $B$ so that the shift
+vanishes at the peak, $B = S_l(|E_r|)$; then $E_\lambda = E_r$ and, with
+$\gamma^2 = \Gamma_n(|E_r|)/2P_l(|E_r|)$, the shift away from the peak is
+exactly the formula above. It is not an ad hoc correction but the leading
+energy dependence of the R-matrix level shift. The same one-level limit gives
+the three terms of the elastic formula: potential scattering, interference,
+and resonance (Lane & Thomas eq. XII.1.14).
+
 Read the capture formula as Bohr's two-step picture:
 
 $$
@@ -194,6 +206,52 @@ A last detail, found while testing: the evaluation gives U-238's low
 resonances a fission width of about $10^{-8}$ eV (**subthreshold fission**).
 It is real, but six orders of magnitude below capture.
 
+## Historical note: Breit and Wigner, 1936
+
+In 1936 slow-neutron experiments posed a puzzle
+[[Breit & Wigner](#ref-breitwigner)]. Some elements captured slow neutrons
+with cross sections thousands of times their geometric size, in narrow
+"absorption bands", yet the strongest absorbers scattered very little: for
+cadmium, elastic scattering of slow neutrons was below 1% of capture. The
+theories of the time (Bethe; Fermi) treated capture as a resonance of the
+neutron alone in a potential well, and predicted that large capture should
+come with large scattering.
+
+Breit and Wigner's answer was a **quasi-stationary state** of neutron plus
+nucleus that can decay in two ways: by re-emitting the neutron, or by
+emitting a gamma ray ("radiation damping"). If the radiation width is much
+larger than the neutron width, the state almost always radiates before the
+neutron escapes, so capture dominates, and scattering/capture
+$\approx \Gamma_n/\Gamma_\gamma$. For the 6.67 eV resonance of U-238 that
+ratio is $1.49/22.7 \approx 1/15$. Their eq. (14) reads
+
+$$
+\sigma_c = \frac{\Lambda^2}{\pi}\,S\,\frac{\Gamma_s\Gamma_r}{(\nu-\nu_0)^2 + \Gamma^2},
+\qquad \Gamma = \Gamma_s + \Gamma_r ,
+$$
+
+with $\Lambda$ the neutron wavelength, widths defined as *half* the
+half-value breadth, and $S = 2L+1$ a statistical factor for the orbital
+angular momentum. With $\Lambda = 2\pi/k$ and full widths
+($\Gamma_s \to \Gamma_n/2$, $\Gamma_r \to \Gamma_\gamma/2$) this is
+exactly the capture formula of section 4.1, except that the spin factor $g_J$
+takes the place of $S$ once the neutron and target spins are counted.
+
+Two more ideas of the modern theory are already in the paper. Because the
+neutron width of an s-wave level grows with the neutron velocity, they
+predicted two maxima of capture, one at the resonance and one at $E \to 0$:
+the 1/v region. And their "Dirac frequency shift" of the level (eq. 15) is
+the ancestor of the level shift above. They worked with radiation widths of
+1–10 eV, far larger than the ~0.02–0.05 eV measured later for heavy
+nuclei, but the argument only needs $\Gamma_\gamma \gg \Gamma_n$, which
+holds. They presented the theory "not because we believe it to be a final
+theory but because further development may be helped by having the
+preparatory structure well cemented." R-matrix theory provided that
+development: Lane and Thomas note that the Breit–Wigner *form* fits isolated
+resonances excellently, because it follows from a long-lived intermediate
+state alone, and that absurdities appeared only when the fitted parameters
+were interpreted through the perturbation theory used to derive it.
+
 ## Further reading
 
 * [[ENDF-102](#ref-endf102)] §D.1.1 (free).
@@ -201,7 +259,11 @@ It is real, but six orders of magnitude below capture.
   R-matrix expressions (free).
 * [[Bell & Glasstone](#ref-bell)] §8.1b (the SLBW formula) and §8.1e
   (overlap and interference of resonances) (free).
-* [[Breit & Wigner](#ref-breitwigner)], the original paper (not free).
+* [[Breit & Wigner](#ref-breitwigner)], the original paper: §1–2 the
+  argument and eq. (14), §4 the comparison with experiment (not free).
+* [[Lane & Thomas](#ref-lanethomas)] §XII.1–2, the one-level approximation of
+  R-matrix theory: level shift, choice of boundary condition, eq. 1.14 for the
+  elastic cross section (not free).
 * Code: [`slbw.py`](../../src/fission/endf/slbw.py) (`single_resonance`
   returns every ingredient above; `slbw` sums the levels). Try
   `make scan NUC=U238 E=20.87`.

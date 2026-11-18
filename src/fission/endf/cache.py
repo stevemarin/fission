@@ -81,7 +81,7 @@ def cache_key(endf_file: Path, params: dict) -> tuple[str, dict]:
     return key, meta
 
 
-def _save(path: Path, table: PointwiseTable, meta: dict) -> None:
+def save_table(path: Path, table: PointwiseTable, meta: dict) -> None:
     # entries: "energies", "meta" (JSON string) and one "mt<N>" array per reaction
     payload: dict[str, Any] = {
         "energies": np.asarray(table.energies),
@@ -93,7 +93,7 @@ def _save(path: Path, table: PointwiseTable, meta: dict) -> None:
     tmp.replace(path)  # atomic: a reader never sees a half-written file
 
 
-def _read_meta(path: Path) -> dict | None:
+def read_meta(path: Path) -> dict | None:
     try:
         with np.load(path) as data:
             return json.loads(str(data["meta"]))
@@ -101,7 +101,7 @@ def _read_meta(path: Path) -> dict | None:
         return None
 
 
-def _load(path: Path, key: str) -> PointwiseTable | None:
+def load_table(path: Path, key: str) -> PointwiseTable | None:
     try:
         with np.load(path) as data:
             meta = json.loads(str(data["meta"]))
@@ -117,14 +117,34 @@ def _load(path: Path, key: str) -> PointwiseTable | None:
         return None
 
 
-def _prune_stale(directory: Path, nuclide: str, keep: Path) -> None:
-    """Delete this nuclide's entries that were built by different code."""
-    for other in directory.glob(f"{nuclide}-*.npz"):
+def prune_stale(directory: Path, pattern: str, keep: Path, code: str) -> None:
+    """Delete entries matching `pattern` that were built by different code."""
+    for other in directory.glob(pattern):
         if other == keep:
             continue
-        meta = _read_meta(other)
-        if meta is None or meta.get("code") != code_fingerprint():
+        meta = read_meta(other)
+        if meta is None or meta.get("code") != code:
             other.unlink(missing_ok=True)
+
+
+def pointwise_params(
+    *,
+    tol: float,
+    atol: float,
+    lo: float | None,
+    hi: float | None,
+    mts: list[int] | None,
+    use_rust: bool,
+) -> dict:
+    """The parameters that enter a pointwise table's cache key."""
+    return {
+        "tol": tol,
+        "atol": atol,
+        "lo": lo,
+        "hi": hi,
+        "mts": sorted(mts) if mts else None,
+        "use_rust": use_rust,
+    }
 
 
 def cached_pointwise(
@@ -144,27 +164,22 @@ def cached_pointwise(
     lib = lib or EndfLibrary()
     endf_file = lib.neutron(nuclide)
     directory = cache_dir or lib.root / "pointwise"
-    params = {
-        "tol": tol,
-        "atol": atol,
-        "lo": lo,
-        "hi": hi,
-        "mts": sorted(mts) if mts else None,
-        "use_rust": use_rust,
-    }
+    params = pointwise_params(
+        tol=tol, atol=atol, lo=lo, hi=hi, mts=mts, use_rust=use_rust
+    )
     key, meta = cache_key(endf_file, params)
     path = directory / f"{nuclide}-{key[:16]}.npz"
 
     if not refresh and path.exists():
-        table = _load(path, key)
+        table = load_table(path, key)
         if table is not None:
             return table
 
     ev = Evaluation.from_file(endf_file)
     table = pointwise(ev, mts=mts, lo=lo, hi=hi, tol=tol, atol=atol, use_rust=use_rust)
     directory.mkdir(parents=True, exist_ok=True)
-    _save(path, table, {**meta, "key": key, "points": len(table)})
-    _prune_stale(directory, nuclide, keep=path)
+    save_table(path, table, {**meta, "key": key, "points": len(table)})
+    prune_stale(directory, f"{nuclide}-*.npz", keep=path, code=code_fingerprint())
     return table
 
 
@@ -191,7 +206,7 @@ def main(argv: list[str] | None = None) -> None:
         directory = lib.root / "pointwise"
         current = code_fingerprint()
         for path in sorted(directory.glob("*.npz")):
-            meta = _read_meta(path) or {}
+            meta = read_meta(path) or {}
             status = "current" if meta.get("code") == current else "stale"
             size = path.stat().st_size / 1e6
             print(

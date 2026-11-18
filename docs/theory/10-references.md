@@ -74,6 +74,14 @@ source or a standard text.
   Doppler Broadening of Tabulated Cross Sections", *Nuclear Science and
   Engineering* **60**, 199–229 (1976). <https://doi.org/10.13182/NSE76-1>
   **(not free)**
+- []{#ref-solbrig}**[Solbrig]** A. W. Solbrig, Jr., "Doppler Broadening of
+  Low-Energy Neutron Resonances", *Nuclear Science and Engineering* **10**,
+  167–168 (1961). The exact free-gas kernel.
+  <https://doi.org/10.13182/NSE61-A25954> **(not free)**
+- []{#ref-lamb}**[Lamb]** W. E. Lamb, "Capture of Neutrons by Atoms in a
+  Crystal", *Physical Review* **55**, 190–197 (1939). Lattice binding; the
+  effective temperature.
+  <https://doi.org/10.1103/PhysRev.55.190> **(not free)**
 
 ## Reactor physics {.unnumbered}
 

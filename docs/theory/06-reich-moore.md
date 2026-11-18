@@ -35,8 +35,11 @@ U = \Omega\, P^{1/2}\,(I - RL)^{-1}(I - RL^*)\,P^{-1/2}\,\Omega,
 $$
 
 with $P$, $S$ and $\varphi$ the penetrabilities, shift factors and phase shifts
-(diagonal matrices) and $B$ a boundary constant chosen by the evaluator. Two
-properties make this the foundation of resonance analysis:
+(diagonal matrices) and $B$ a boundary constant chosen by the evaluator.
+Neither $a$ nor $B$ is physical: changing them changes the level parameters
+$E_\lambda$ and $\gamma_{\lambda c}$, but not $U$ or any cross section
+[[Lane & Thomas](#ref-lanethomas) §IV.2]. Two properties make this the
+foundation of resonance analysis:
 
 * **It is exact**, given enough levels and channels, and $U$ is unitary and
   symmetric.
@@ -64,7 +67,37 @@ $$
 
 The gamma width is not dropped; it becomes the "damping" of each level. The
 approximation fails only if a few gamma transitions dominate, which does not
-happen for heavy nuclei. That is why the ENDF manual calls Reich–Moore the
+happen for heavy nuclei.
+
+**Channel elimination (derivation).** The rigorous version of this step is
+the channel-elimination method of Teichmann and Wigner
+[[Lane & Thomas](#ref-lanethomas) §X]. Split the channels into those we keep
+($r$: neutron, fission) and those we eliminate ($e$: photons). In the
+eliminated channels only outgoing waves exist, so their logarithmic
+derivatives are known, $L_e^0 = L_e - B_e$, and the matching conditions can
+be solved for them. What remains is a **reduced R matrix** over the kept
+channels alone,
+
+$$
+\mathfrak{R}_{rr} = R_{rr} + R_{re}\,L_e^0\,(1 - R_{ee}L_e^0)^{-1}\,R_{er},
+$$
+
+which reproduces the kept part of the collision matrix exactly. Two facts
+follow:
+
+* If any eliminated channel is open, $L_e^0$ is complex and so is
+  $\mathfrak{R}$. The collision matrix of the kept channels is then **not
+  unitary** (Lane & Thomas eq. X.1.5a): flux disappears into the eliminated
+  channels. In Reich–Moore that missing flux is the capture cross section:
+  the manual obtains it by subtraction (section 6.4), this project directly
+  from the flux each level loses (section 6.5).
+* Written as a level matrix, $\mathfrak{R}$ involves the matrix
+  $\xi_{\lambda\mu} = \sum_{e}\gamma_{\lambda e}L_e^0\gamma_{\mu e}$
+  over the eliminated channels only. With many photon channels whose
+  amplitudes have random signs (Bethe's assumption), the off-diagonal
+  elements have a most probable value of zero, while the diagonal elements
+  add up to $-\tfrac{i}{2}\Gamma_{\lambda\gamma}$ (Lane & Thomas §XI.2).
+  Dropping the off-diagonal part is exactly the Reich–Moore approximation. That is why the ENDF manual calls Reich–Moore the
 recommended formalism.
 
 ## The ENDF form (LRF = 3)
@@ -244,6 +277,15 @@ Reich–Moore omits.
   interference. Every reactor calculation depends on this number, so for
   fissile nuclides a multi-level formalism is not optional.
 
+Interference also shapes the valleys between levels. Lane and Thomas show
+that with only two open channels a reaction cross section can vanish exactly
+between two levels, when the products of their amplitudes have the same sign;
+with more channels it never vanishes [[Lane & Thomas](#ref-lanethomas)
+§XII.5]. U-235 has several (neutron, two fission channels, and capture
+through the damping), and its fission cross section shows exactly that
+behaviour: between 1 and 100 eV it has 139 local minima, the deepest
+0.023 b against a maximum of 1225 b, deep but never zero.
+
 ## Potential scattering and the "missing" channels
 
 As in MLBW, spin weight not covered by resonant spin groups contributes
@@ -272,7 +314,9 @@ Chapter 7 needs this at about a million energies.
   stable forms (free, OSTI).
 * [[Fröhner](#ref-frohner)] §3.2 (exact R-matrix expressions) and §3.3.4
   (Reich–Moore) (free).
-* [[Lane & Thomas](#ref-lanethomas)], [[Reich & Moore](#ref-reichmoore)],
+* [[Lane & Thomas](#ref-lanethomas)] §IV–V (R-matrix theory), §X (channel
+  elimination, the reduced R matrix), §XI.2 (random signs), §XII.5 (minima
+  between levels); [[Reich & Moore](#ref-reichmoore)],
   [[Wigner & Eisenbud](#ref-wignereisenbud)]: the original papers (not
   free).
 * Code: [`reich_moore.py`](../../src/fission/endf/reich_moore.py)

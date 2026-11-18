@@ -128,3 +128,49 @@ def test_u238_full_table(lib):
     assert table(102, 0.0253) == pytest.approx(2.68, rel=1e-2)
     # capture RI 0.5 eV - 20 MeV: Mughabghab 275 +- 3 b (resolved part ~274.4 b)
     assert table.integral_over_e(102, 0.5, 2e7) == pytest.approx(275.0, rel=1.5e-2)
+
+
+# ------------------------------------------------------------ Rust parity
+def test_rust_fsum_is_bit_identical_to_math_fsum():
+    from fission import _rust
+
+    rng = random.Random(11)
+    for _ in range(300):
+        values = [
+            rng.uniform(-1, 1) * 10.0 ** rng.randint(-30, 30)
+            for _ in range(rng.randint(0, 40))
+        ]
+        assert _rust.fsum(values) == math.fsum(values)
+    tie = [1.0, 2.0**-53, 2.0**-106]  # needs the half-even correction
+    assert _rust.fsum(tie) == math.fsum(tie)
+
+
+def _edge_window(lib, nuclide, width):
+    ev = _ev(lib, nuclide)
+    eh = ev.resonances[0].resolved.eh
+    return ev, eh * (1 - width), eh * (1 + width)
+
+
+@pytest.mark.parametrize(
+    "nuclide, window",
+    [
+        ("H1", None),  # no resonances; log-log capture linearized
+        ("O16", None),  # many MF3 reactions and jumps
+        ("U238", (6.0, 7.5)),  # Reich-Moore around the 6.67 eV resonance
+        ("Zr90", "edge"),  # MLBW, shaded upper edge of the resolved range
+        ("U235", "edge"),  # Reich-Moore at its upper edge
+    ],
+)
+def test_rust_table_identical_to_python(lib, nuclide, window):
+    if window == "edge":
+        ev, lo, hi = _edge_window(lib, nuclide, 0.001)
+    else:
+        ev = _ev(lib, nuclide)
+        lo, hi = window or (None, None)
+    py = pointwise(ev, lo=lo, hi=hi, use_rust=False)
+    rust = pointwise(ev, lo=lo, hi=hi, use_rust=True)
+    assert rust.energies == py.energies  # same grid, point for point
+    # resonance formulas agree to ~1e-15 of the total, not bit for bit; elastic
+    # can be small after interference cancellation, hence the absolute floor
+    for mt in py.xs:
+        assert rust.xs[mt] == pytest.approx(py.xs[mt], rel=1e-12, abs=1e-11)

@@ -29,6 +29,7 @@ make test-slow    # full-resolution physics checks (minutes)
 make fix          # ruff --fix + format
 make data         # download pin-cell evaluations into endf-data/
 make tables       # build/load cached pointwise tables for pin-cell nuclides
+make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
 make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
@@ -41,6 +42,9 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
 
 ## Layout
 
+- `src/fission/processing/`: stages that take 0 K tables as input
+  (`doppler.py`; later group averaging). Kept outside `endf/` so edits do
+  not invalidate the table cache.
 - `src/fission/data.py`: ENDF/B-VIII.1 downloader (NNDC tarballs, SHA-1 checked)
   → `endf-data/` (gitignored).
 - `src/fission/endf/`: ENDF-6 reader (`records`, `interpolation`,
@@ -54,7 +58,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `09-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `10-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -68,7 +72,17 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
   (cancellation at 1e-7).
 - The table cache key includes a fingerprint of every `fission/endf/*.py` and
   the `_rust` .so: **any edit there invalidates all cached tables**, and the
-  next `make tables` / `make figures` rebuilds them (~2–3 min, U-238 ~90 s).
+  next `make tables` / `make figures` rebuilds them (~15 s; U-238 ~10 s).
+  Any Rust change does the same (the .so is fingerprinted). Broadened tables
+  are keyed on the 0 K key + T + params + `fission/processing` code.
+- Doppler: free-gas exact kernel, weights shared by all MTs; Gauss rule
+  chosen by panel width; seeds at ±1–3 Γ_D around sparse 0 K points (the
+  midpoint test alone misses rounded corners whose shifts cancel); refined
+  then thinned; observed error ≤ ~1.5 tol.
+- Rust refinement is threaded with std only (`adaptive_grid_parallel`,
+  identical to serial). `pointwise(use_rust=True)` runs the whole full-range
+  refinement in Rust (`rust/src/pointwise.rs`, exact `fsum.rs` port of
+  `math.fsum`); `use_rust=False` is the all-Python reference.
 - Physics numbers in docs or tests must be computed by this code or taken
   from a cited source, not from memory. Known checks: U-238 thermal capture
   2.682 b, U-235 fission 586.2 b, U-238 capture RI 275.28 b.
@@ -78,8 +92,23 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
 
 ## Roadmap
 
-0 setup → 1 ENDF reader → 2 resonance reconstruction (0 K) → **3 pin-cell
-geometry + cyclic ray tracing (next)** → 4 MOC → 5 Doppler broadening →
-6 group constants (+ S(α,β)) → 7 first pin cell (dilute) → 8 self-shielding,
-compare with VERA problem 1 → 9 homogenize/condense, B1, feed nodal →
-10 CP cross-check, 17×17 assembly.
+Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
+theory docs ch. 0–9. Data and transport are independent tracks that meet at
+self-shielding (C1).
+
+- **A: nuclear data → multigroup library**
+  - **A1 Doppler broadening (current)**
+  - A2 rest of the reader (ν̄, χ, MF4/MF5/MF6)
+  - A3 group averaging (σ_g, νσ_f, χ, P0/P1 matrices)
+  - A4 thermal scattering (free gas, then S(α,β))
+  - A5 infinite-medium spectrum + k∞ of a homogenized pin cell
+- **B: transport**
+  - B1 pin-cell geometry + cyclic ray tracing
+  - B2 MOC, verified on C5G7 7-group data
+  - B3 Rust sweep
+- **C: coupling**
+  - C1 self-shielding (equivalence/Bondarenko + Dancoff, or subgroup)
+  - C2 real pin cell vs VERA problem 1
+  - C3 homogenize/condense to 2 groups + B1 → nodal (branch `claude-nodal`)
+  - C4 CP cross-check, 17×17 assembly
+- Deferred: unresolved-range probability tables, depletion.

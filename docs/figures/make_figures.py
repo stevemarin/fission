@@ -24,8 +24,15 @@ from fission.endf import Evaluation, fast
 from fission.endf.cache import cached_pointwise
 from fission.endf.channel import penetrability_shift_phase
 from fission.endf.interpolation import interpolate
-from fission.endf.reconstruct import reconstruct
+from fission.endf.pointwise import PointwiseTable
+from fission.endf.reconstruct import adaptive_grid, reconstruct
 from fission.endf.slbw import potential_scattering, slbw
+from fission.processing.cache import cached_doppler
+from fission.processing.doppler import (
+    broaden_table,
+    broadened_at,
+    doppler_width,
+)
 
 OUT = Path(__file__).parent
 PREVIEW = (
@@ -328,6 +335,132 @@ def fig_points_per_decade():
     save(fig, "points_per_decade")
 
 
+# ---------------------------------------------------------------- chapter 8
+TEMPS = (293.6, 600.0, 900.0, 1200.0)
+
+
+def _window(table, mt, lo, hi):
+    e = np.array(table.energies)
+    k = (e >= lo) & (e <= hi)
+    return e[k], np.array(table.xs[mt])[k]
+
+
+def fig_doppler_667():
+    fig, ax = plt.subplots(figsize=(7.0, 4.0))
+    curves = [("0 K", cached_pointwise("U238"))] + [
+        (f"{t:g} K", cached_doppler("U238", t)) for t in TEMPS
+    ]
+    for (label, table), color in zip(curves, C, strict=False):
+        e, s = _window(table, 102, 6.2, 7.15)
+        ax.semilogy(e, s, color=color, lw=1.2, label=label)
+    ax.set(
+        xlabel="E (eV)",
+        ylabel="capture (b)",
+        ylim=(3, 4e4),
+        title="U-238 6.67 eV resonance: Doppler broadening (free gas)",
+    )
+    ax.legend(loc="upper right")
+    save(fig, "doppler_667")
+
+
+def fig_thermal_rise():
+    """H-1 elastic for a free-gas target: the 1/v rise at low energy."""
+    fig, ax = plt.subplots(figsize=(6.5, 3.8))
+    e = np.array(logspace(2e-5, 10.0, 400))
+    cold = cached_pointwise("H1")
+    ax.loglog(e, [cold(2, x) for x in e], color=C[0], label="0 K")
+    for t, color in zip((293.6, 900.0), C[1:], strict=False):
+        hot = cached_doppler("H1", t)
+        ax.loglog(e, [hot(2, x) for x in e], color=color, label=f"{t:g} K")
+    ax.set(
+        xlabel="E (eV)",
+        ylabel="elastic (b)",
+        title="H-1 elastic, free-gas target: the low-energy rise",
+    )
+    ax.legend()
+    save(fig, "thermal_rise")
+
+
+def fig_corner_rounding():
+    """A ramp between two plateaus: why extra seeds are needed."""
+    cold = PointwiseTable([90.0, 100.0, 110.0, 120.0], {18: [50.0, 50.0, 10.0, 10.0]})
+    awr, temp = (
+        233.0,
+        293.6,
+    )  # Gamma_D(100 eV) = 0.21 eV, much less than the 10 eV interval
+
+    def f(v):
+        return tuple(broadened_at(cold, awr, temp, [v])[18])
+
+    naive_e, naive_v = adaptive_grid(f, cold.energies, 1e-3, 1e-5)
+    good = broaden_table(cold, awr, temp)
+    fine = np.linspace(95.0, 115.0, 4001)
+    exact = np.array(broadened_at(cold, awr, temp, fine)[18])
+    naive = np.interp(fine, naive_e, [v[0] for v in naive_v])
+    fig, (l, r) = plt.subplots(1, 2, figsize=(8.6, 3.6))
+    l.plot(fine, [cold(18, v) for v in fine], color="0.6", lw=1, ls="--", label="0 K")
+    l.plot(fine, exact, color=C[0], lw=1.6, label="broadened (exact)")
+    l.plot(
+        naive_e,
+        [v[0] for v in naive_v],
+        "o",
+        color=C[1],
+        ms=4,
+        label="midpoint test only",
+    )
+    l.set(
+        xlim=(95, 115),
+        xlabel="E (eV)",
+        ylabel=r"$\sigma$ (b)",
+        title=f"ramp, $\\Gamma_D$ = {doppler_width(100, awr, temp):.2f} eV",
+    )
+    l.legend(fontsize=8)
+    k = (fine > 99.0) & (fine < 101.5)
+    r.plot(
+        fine[k], 100 * (naive[k] / exact[k] - 1), color=C[1], label="midpoint test only"
+    )
+    good_k = np.interp(fine[k], good.energies, good.xs[18])
+    r.plot(
+        fine[k], 100 * (good_k / exact[k] - 1), color=C[2], label="with Doppler seeds"
+    )
+    r.axhspan(-0.1, 0.1, color="0.85", label="tolerance 0.1%")
+    r.set(
+        xlabel="E (eV)",
+        ylabel="table error (%)",
+        title="error near the corner at 100 eV",
+    )
+    r.legend(fontsize=8)
+    save(fig, "corner_rounding")
+
+
+def fig_shielded_ri():
+    def shielded(t, s0):
+        e, g = _window(t, 102, 0.5, 2e4)
+        _, tot = _window(t, 1, 0.5, 2e4)
+        w = 1.0 / e if s0 is None else s0 / ((tot + s0) * e)
+        return np.trapezoid(g * w, e)
+
+    tables = [(0.0, cached_pointwise("U238"))] + [
+        (t, cached_doppler("U238", t)) for t in TEMPS
+    ]
+    fig, ax = plt.subplots(figsize=(6.5, 3.8))
+    for s0, color, label in [
+        (None, C[5], r"dilute ($\sigma_0 \to \infty$)"),
+        (1000.0, C[0], r"$\sigma_0$ = 1000 b"),
+        (100.0, C[2], r"$\sigma_0$ = 100 b"),
+        (50.0, C[1], r"$\sigma_0$ = 50 b"),
+    ]:
+        ri = np.array([shielded(t, s0) for _, t in tables])
+        ax.plot([t for t, _ in tables], ri / ri[1], "o-", color=color, label=label)
+    ax.set(
+        xlabel="temperature (K)",
+        ylabel="capture RI / RI(293.6 K)",
+        title="U-238 capture resonance integral vs. temperature",
+    )
+    ax.legend()
+    save(fig, "shielded_ri")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -339,5 +472,9 @@ if __name__ == "__main__":
         fig_rm_vs_slbw,
         fig_adaptive_grid,
         fig_points_per_decade,
+        fig_doppler_667,
+        fig_thermal_rise,
+        fig_corner_rounding,
+        fig_shielded_ri,
     ):
         make()

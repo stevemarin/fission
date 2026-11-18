@@ -33,3 +33,42 @@ def reconstruct(
 ) -> tuple[Array, Array, Array, Array]: ...
 def tab1_eval(table: object, xs: Array) -> Array: ...
 def k_constant() -> float: ...
+def doppler_weights(x: Sequence[float], y: float) -> tuple[int, Array]: ...
+def doppler_evaluate(
+    energies: Sequence[float],
+    columns: Sequence[Sequence[float]],
+    awr: float,
+    temperature: float,
+    at: Sequence[float],
+) -> list[Array]: ...
+def doppler_thin(
+    energies: Sequence[float],
+    columns: Sequence[Sequence[float]],
+    tol: float,
+    atol: float,
+) -> list[int]: ...
+def doppler_broaden_table(
+    energies: Sequence[float],
+    columns: Sequence[Sequence[float]],
+    awr: float,
+    temperature: float,
+    seeds: Sequence[float],
+    tol: float = ...,
+    atol: float = ...,
+    min_rel_width: float = ...,
+) -> tuple[Array, list[Array]]: ...
+def pointwise_table(
+    model: ReichMoore | Mlbw | None,
+    el: float,
+    eh: float,
+    resonance_slots: Sequence[int | None],
+    tables: Sequence[object | None],
+    total: int,
+    partials: Sequence[int],
+    seeds: Sequence[float],
+    unsplittable: Sequence[tuple[float, float]],
+    tol: float = ...,
+    atol: float = ...,
+    min_rel_width: float = ...,
+) -> tuple[Array, list[Array]]: ...
+def fsum(values: Sequence[float]) -> float: ...

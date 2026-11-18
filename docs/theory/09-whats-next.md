@@ -1,45 +1,10 @@
 # What comes next
 
-The tables of chapter 7 describe a nucleus at rest (0 K) in the resolved
-range, and averaged ("infinitely dilute") cross sections in the unresolved
-range. Real fuel is hot, and in a fuel pin the neutron flux itself has
-resonance structure. This chapter previews the next processing steps; each
-will get its own chapter once implemented.
-
-## Doppler broadening
-
-Target nuclei are in thermal motion, so a neutron of laboratory energy $E$
-meets them at a spread of *relative* energies. The cross section an
-experiment or a reactor sees is the 0 K cross section averaged over that
-spread. For a free-gas (Maxwellian) target and a linearly interpolable 0 K
-table, the result is exact in closed form [[Cullen & Weisbin](#ref-cullen);
-[NJOY](#ref-njoy) ch. 4]. With $\alpha = \text{AWR}/(k_B T)$, $y^2 = \alpha E$
-and $x^2 = \alpha E'$:
-
-$$
-\sigma(y, T) = \frac{1}{y^2\sqrt{\pi}}\int_0^\infty x^2\,\sigma(x, 0)
-\left[e^{-(x-y)^2} - e^{-(x+y)^2}\right]\mathrm{d}x .
-$$
-
-The scale of the effect is the **Doppler width**
-
-$$
-\Gamma_D = 2\sqrt{\frac{E\,k_B T}{\text{AWR}}} .
-$$
-
-For the 6.67 eV U-238 resonance in fuel at 900 K, $\Gamma_D = 0.094$ eV, four
-times the natural width $\Gamma = 0.024$ eV. The peak is lowered and the wings
-are raised. For a single resonance with $\xi = \Gamma/\Gamma_D$, the peak
-falls by the factor
-$\psi(0, \xi) = \tfrac{\sqrt\pi}{2}\,\xi\, e^{\xi^2/4}\operatorname{erfc}(\xi/2)
-\approx 0.20$, from 22,765 b to about 4,500 b. The *area* stays essentially
-the same.
-
-Doppler broadening does not change the infinitely dilute resonance integral,
-but it changes the *self-shielded* one. This is the origin of the **Doppler
-coefficient**: hotter fuel captures more neutrons in U-238. It is the most
-important prompt negative feedback in a light-water reactor
-[[Bell & Glasstone](#ref-bell) §8.1d, §8.3e; [Fröhner](#ref-frohner) §3.5].
+Chapters 7 and 8 give pointwise tables at any temperature, with averaged
+("infinitely dilute") cross sections in the unresolved range. In a fuel pin,
+though, the neutron flux itself has resonance structure, and below a few eV
+the moderator atoms are not free. This chapter previews the next processing
+steps; each will get its own chapter once implemented.
 
 ## Self-shielding
 
@@ -69,7 +34,9 @@ $\sigma_{\text{eff}}/\sigma_\infty$ versus $\sigma_0$ and temperature are
 **Bondarenko factors** [[Fröhner](#ref-frohner) §4.3.1]. The geometric part
 of $\sigma_0$ (Dancoff factors, escape probabilities, equivalence relations
 [[Bell & Glasstone](#ref-bell) §8.4]) is where the transport solver of the
-pin-cell model comes in.
+pin-cell model comes in. Section 8.7 already used this flux to show the
+Doppler effect: the shielded U-238 capture grows with temperature while the
+dilute value does not.
 
 ## The unresolved range
 
@@ -96,15 +63,13 @@ spectrum, and with it every thermal reaction rate.
 
 ## Further reading
 
-* [[NJOY](#ref-njoy)] ch. 4 BROADR, ch. 5 UNRESR, ch. 7 THERMR, ch. 23 PURR
+* [[NJOY](#ref-njoy)] ch. 5 UNRESR, ch. 7 THERMR, ch. 23 PURR (free).
+* [[Fröhner](#ref-frohner)] §4 (unresolved range, Bondarenko factors)
   (free).
-* [[Fröhner](#ref-frohner)] §3.5 (Doppler broadening, including point data),
-  §4 (unresolved range, Bondarenko factors) (free).
 * [[Bell & Glasstone](#ref-bell)] ch. 7 (neutron thermalization) and ch. 8
-  (resonance absorption: Doppler broadening §8.1d, unresolved parameters §8.2,
-  the narrow-resonance approximation §8.3) (free).
+  (resonance absorption: unresolved parameters §8.2, the narrow-resonance
+  approximation §8.3, heterogeneous systems §8.4) (free).
 * [[OpenMC](#ref-openmc)] methods documentation: how a modern Monte Carlo
-  code represents and broadens cross sections (free).
-* [[Cullen & Weisbin](#ref-cullen)], the exact broadening of tabulated data
-  (not free); [[Hébert](#ref-hebert)], resonance self-shielding in lattice
-  codes (not free).
+  code represents cross sections (free).
+* [[Hébert](#ref-hebert)], resonance self-shielding in lattice codes (not
+  free).

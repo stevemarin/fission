@@ -181,6 +181,15 @@ S_l &= \frac{\rho\,(F_l F_l' + G_l G_l')}{F_l^2 + G_l^2} &&\text{shift factor}\\
 \end{aligned}
 $$
 
+The names come from where the three quantities appear
+[[Lane & Thomas](#ref-lanethomas) §III.4]. The logarithmic derivative of the
+outgoing wave $O_l = G_l + iF_l$ at the surface is $L_l = \rho\,O_l'/O_l =
+S_l + iP_l$. In R-matrix theory (chapter 6) a level of reduced width
+$\gamma^2$ then gets a width $\Gamma = 2P_l\gamma^2$ (hence *penetration*
+factor) and is displaced by a level shift $\Delta = -S_l\gamma^2$ (hence
+*shift* factor). $\varphi_l$ is the phase shift of an infinitely repulsive
+sphere of radius $a$, whose wave function must vanish at $r = a$.
+
 For $l = 0 \dots 3$ they have closed forms [[ENDF-102](#ref-endf102) Table D.1,
 eqs. D.11–D.13]:
 
@@ -191,8 +200,10 @@ eqs. D.11–D.13]:
 | 2 | $\dfrac{\rho^5}{9+3\rho^2+\rho^4}$ | $-\dfrac{18+3\rho^2}{9+3\rho^2+\rho^4}$ | $\hat\rho - \arctan\dfrac{3\hat\rho}{3-\hat\rho^2}$ |
 | 3 | $\dfrac{\rho^7}{225+45\rho^2+6\rho^4+\rho^6}$ | $-\dfrac{675+90\rho^2+6\rho^4}{225+45\rho^2+6\rho^4+\rho^6}$ | $\hat\rho - \arctan\dfrac{\hat\rho(15-\hat\rho^2)}{15-6\hat\rho^2}$ |
 
-These closed forms are checked in the test suite against the Bessel-function
-definitions above, an independent route to the same numbers.
+The test suite checks these closed forms in two independent ways: against the
+Bessel-function definitions above, and against the polynomials of Lane and
+Thomas's Table A.1, which express the same functions in terms of
+$\rho^2$.
 
 ![Left: penetrabilities. At small $\rho$, $P_l \approx \rho^{2l+1}/[(2l-1)!!]^2$: each extra unit of $l$ costs a factor $\rho^2$. Right: $\sin^2\varphi_l$, which controls potential scattering.](../figures/hard_sphere.svg)
 
@@ -225,6 +236,20 @@ Two radii appear in the formulas [[ENDF-102](#ref-endf102) eq. D.14]:
 * the **scattering radius** AP, used in the phase shift ($\hat\rho = k\,AP$).
   It is fitted by the evaluator to reproduce the measured potential
   scattering.
+
+Why two radii? In R-matrix theory the channel radius is where "inside"
+ends: the separation beyond which the neutron feels no nuclear force. The
+theory is exact for any choice of $a$ beyond that point; changing $a$ (or the
+boundary constant $B$ of chapter 6) changes the fitted level parameters but
+not the cross sections [[Lane & Thomas](#ref-lanethomas) §IV.2]. So $a$ is a
+convention, and it must be fixed whenever parameters are quoted. The
+potential scattering is a different matter. Distant levels, outside the
+evaluated range, add a smooth contribution to the phase shift that Lane and
+Thomas estimate to be as large as the hard-sphere phase itself, and they
+conclude that there is "little justification" for reading the observed
+potential scattering as scattering by a hard sphere of radius $a$ (§IV.1c).
+ENDF therefore lets the evaluator fit a separate scattering radius AP to the
+measured potential scattering, while $a$ stays a nuclear-size convention.
 
 The flag NAPS selects $a$: for NAPS = 0, $a = 0.123\,\text{AWRI}^{1/3} + 0.08$
 (in $10^{-12}$ cm, a nuclear-size formula); for NAPS = 1, $a = AP$.
@@ -276,8 +301,10 @@ no resonance parameters at all (LRP = 0); for them MF3 is complete.
   §4.1 (width and level statistics) (free, NEA/JEFF Report 18). The best single
   free text on these topics.
 * [[ENDF-102](#ref-endf102)] Appendix D.1 and Table D.1 (free).
-* [[Lane & Thomas](#ref-lanethomas)] §III–IV: the original derivations (not
-  free).
+* [[Lane & Thomas](#ref-lanethomas)] §III.4 ($P$, $S$, $\varphi$ and their
+  names), §IV (the one-channel theory: R function, collision function, the
+  role of $a$ and $B$), Appendix d and Table A.1 (neutron functions as
+  polynomials) (not free).
 * [[Blatt & Weisskopf](#ref-blattweisskopf)] ch. VIII–X: compound nucleus and
   resonance reactions (not free; inexpensive reprint).
 * Code: [`channel.py`](../../src/fission/endf/channel.py) (wave number,

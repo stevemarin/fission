@@ -224,6 +224,28 @@ def pointwise(
     seeds = {e for e in seeds if lo <= e <= hi and e not in jumps}
     # a shaded pair straddles a jump: refining it would only put the jump back
     shaded_pairs = {(e * (1 - SHADE), e * (1 + SHADE)) for e in jumps}
+    if use_rust and (rr is None or rr.lrf in (2, 3)):
+        # the same refinement, entirely in Rust and on all cores
+        from .. import _rust
+        from .fast import resonance_model
+
+        grid, columns = _rust.pointwise_table(
+            resonance_model(rr) if rr is not None else None,
+            rr.el if rr is not None else 0.0,
+            rr.eh if rr is not None else 0.0,
+            [slots.get(mt) for mt in (ELASTIC, CAPTURE, FISSION)],
+            [tables[mt].table if mt in tables and mt != TOTAL else None for mt in mts],
+            slots[TOTAL],
+            [slots[mt] for mt in partials],
+            sorted(seeds),
+            sorted(shaded_pairs),
+            tol,
+            atol,
+        )
+        return PointwiseTable(
+            energies=grid.tolist(),
+            xs={mt: col.tolist() for mt, col in zip(mts, columns, strict=True)},
+        )
     energies, values = adaptive_grid(
         f, sorted(seeds), tol, atol, unsplittable=shaded_pairs
     )

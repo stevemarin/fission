@@ -54,6 +54,40 @@ def test_hard_sphere_functions_match_bessel_definitions(l, rho):
     assert math.tan(phi) == pytest.approx(f / g, rel=1e-9)
 
 
+# Lane & Thomas (1958), Appendix Table A.1, in terms of z = rho^2:
+# A_l z^l = rho^(2l+1) / P_l,  A_l S_l z^l,  and tan(rho - phi_l) = V_l / U_l
+LANE_THOMAS_A1 = {
+    0: (lambda z: 1.0, lambda z: 0.0, lambda z: 1.0, lambda z: 0.0),
+    1: (lambda z: 1 + z, lambda z: -1.0, lambda z: 1.0, lambda z: 1.0),
+    2: (
+        lambda z: 9 + 3 * z + z * z,
+        lambda z: -3 * (6 + z),
+        lambda z: 3 - z,
+        lambda z: 3.0,
+    ),
+    3: (
+        lambda z: 225 + 45 * z + 6 * z * z + z**3,
+        lambda z: -3 * (225 + 30 * z + 2 * z * z),
+        lambda z: 15 - 6 * z,
+        lambda z: 15 - z,
+    ),
+}  # (A_l z^l, A_l S_l z^l, U_l, V_l / rho)
+
+
+@pytest.mark.parametrize("l", [0, 1, 2, 3])
+@pytest.mark.parametrize("rho", [0.01, 0.2, 1.0, 3.0])
+def test_hard_sphere_functions_match_lane_thomas_table(l, rho):
+    """The ENDF-102 closed forms agree with Lane & Thomas's Table A.1."""
+    a, a_s, u, v_over_rho = LANE_THOMAS_A1[l]
+    z = rho * rho
+    p, s, phi = penetrability_shift_phase(l, rho, rho)
+    assert p == pytest.approx(rho ** (2 * l + 1) / a(z), rel=1e-13)
+    assert s == pytest.approx(a_s(z) / a(z), rel=1e-13, abs=1e-15)
+    assert math.tan(rho - phi) == pytest.approx(
+        rho * v_over_rho(z) / u(z), rel=1e-9, abs=1e-15
+    )
+
+
 def test_wave_number_constant():
     # ENDF-102 quotes 2.196771e-3 (older constants); CODATA 2018 gives 2.196808e-3
     assert pytest.approx(2.19680e-3, rel=2e-5) == K_CONSTANT

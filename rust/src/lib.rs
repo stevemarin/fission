@@ -5,7 +5,10 @@
 
 pub mod channel;
 pub mod complex;
+pub mod doppler;
+pub mod fsum;
 pub mod mlbw;
+pub mod pointwise;
 pub mod reconstruct;
 pub mod reich_moore;
 pub mod spin_groups;
@@ -168,14 +171,179 @@ fn py_reconstruct<'py>(
         v
     };
     // the physics does not touch Python objects: let other Python threads run
-    let (energies, values) =
-        py.detach(|| reconstruct::adaptive_grid(f, &seeds, tol, atol, min_rel_width));
+    let (energies, values) = py.detach(|| {
+        let none = reconstruct::Unsplittable::new();
+        reconstruct::adaptive_grid_parallel(f, &seeds, tol, atol, min_rel_width, &none)
+    });
     let pick = |j: usize| values.iter().map(|v| v[j]).collect::<Vec<f64>>();
     Ok((
         energies.into_pyarray(py),
         pick(0).into_pyarray(py),
         pick(1).into_pyarray(py),
         pick(2).into_pyarray(py),
+    ))
+}
+
+// ---------------------------------------------------- full-range tables
+/// Full-range pointwise table (port of the refinement in `pointwise()`).
+///
+/// `tables[i]` is the MF3 `Tabulated1D` of value slot i (None for the total
+/// or a missing reaction); `resonance_slots` are the slots of (elastic,
+/// capture, fission); slot `total` is the exact sum of `partials`.
+/// Returns the grid and one array per slot.
+#[pyfunction]
+#[pyo3(signature = (model, el, eh, resonance_slots, tables, total, partials, seeds,
+                    unsplittable, tol=1e-3, atol=1e-5, min_rel_width=1e-9))]
+#[allow(clippy::too_many_arguments)]
+fn pointwise_table<'py>(
+    py: Python<'py>,
+    model: Option<Model<'py>>,
+    el: f64,
+    eh: f64,
+    resonance_slots: [Option<usize>; 3],
+    tables: Vec<Option<tab1::Tab1>>,
+    total: usize,
+    partials: Vec<usize>,
+    seeds: Vec<f64>,
+    unsplittable: Vec<(f64, f64)>,
+    tol: f64,
+    atol: f64,
+    min_rel_width: f64,
+) -> PyResult<(Array<'py>, Vec<Array<'py>>)> {
+    let n = tables.len();
+    let in_range = |s: &usize| *s < n;
+    if seeds.len() < 2
+        || !in_range(&total)
+        || !partials.iter().all(in_range)
+        || !resonance_slots.iter().flatten().all(in_range)
+    {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "bad slots or fewer than two seeds",
+        ));
+    }
+    let reactions = pointwise::Reactions {
+        tables,
+        resonance: model.as_ref().map(|m| pointwise::ResonancePart {
+            model: m.resonances(),
+            el,
+            eh,
+            slots: resonance_slots,
+        }),
+        total,
+        partials,
+    };
+    let keep: reconstruct::Unsplittable = unsplittable
+        .iter()
+        .map(|(a, b)| (a.to_bits(), b.to_bits()))
+        .collect();
+    let (grid, rows) = py.detach(|| {
+        reconstruct::adaptive_grid_parallel(
+            |e| reactions.eval(e),
+            &seeds,
+            tol,
+            atol,
+            min_rel_width,
+            &keep,
+        )
+    });
+    Ok((grid.into_pyarray(py), columns_to_arrays(py, n, &rows)))
+}
+
+/// Correctly rounded sum (port of `math.fsum`, for parity tests).
+#[pyfunction(name = "fsum")]
+fn py_fsum(values: Vec<f64>) -> f64 {
+    fsum::fsum(values)
+}
+
+// ------------------------------------------------------------ Doppler
+fn columns_to_arrays<'py>(py: Python<'py>, n: usize, rows: &[Vec<f64>]) -> Vec<Array<'py>> {
+    (0..n)
+        .map(|m| {
+            rows.iter()
+                .map(|r| r[m])
+                .collect::<Vec<f64>>()
+                .into_pyarray(py)
+        })
+        .collect()
+}
+
+fn check_columns(energies: &[f64], columns: &[Vec<f64>]) -> PyResult<()> {
+    if energies.len() < 2 || columns.iter().any(|c| c.len() != energies.len()) {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "need at least two energies and one value per energy in every column",
+        ));
+    }
+    Ok(())
+}
+
+/// Broadening weights at reduced speed y: (index of the first weight, weights).
+#[pyfunction]
+fn doppler_weights<'py>(py: Python<'py>, x: Vec<f64>, y: f64) -> (usize, Array<'py>) {
+    let (start, w) = doppler::broadening_weights(&x, y);
+    (start, w.into_pyarray(py))
+}
+
+/// Broadened columns at the energies `at` (port of `broadened_at`).
+#[pyfunction]
+fn doppler_evaluate<'py>(
+    py: Python<'py>,
+    energies: Vec<f64>,
+    columns: Vec<Vec<f64>>,
+    awr: f64,
+    temperature: f64,
+    at: Vec<f64>,
+) -> PyResult<Vec<Array<'py>>> {
+    check_columns(&energies, &columns)?;
+    let rows = py.detach(|| {
+        let cold = doppler::ColdTable::new(&energies, &columns, awr, temperature);
+        at.iter().map(|&e| cold.eval(e)).collect::<Vec<_>>()
+    });
+    Ok(columns_to_arrays(py, columns.len(), &rows))
+}
+
+/// Indices kept by thinning; `columns` hold one array per reaction (port of `thin`).
+#[pyfunction]
+fn doppler_thin(
+    energies: Vec<f64>,
+    columns: Vec<Vec<f64>>,
+    tol: f64,
+    atol: f64,
+) -> PyResult<Vec<usize>> {
+    check_columns(&energies, &columns)?;
+    let rows: Vec<Vec<f64>> = (0..energies.len())
+        .map(|k| columns.iter().map(|c| c[k]).collect())
+        .collect();
+    Ok(doppler::thin(&energies, &rows, tol, atol))
+}
+
+/// Broaden a table: evaluate at `seeds`, refine, thin.
+#[pyfunction]
+#[pyo3(signature = (energies, columns, awr, temperature, seeds, tol=1e-3, atol=1e-5, min_rel_width=1e-9))]
+#[allow(clippy::too_many_arguments)]
+fn doppler_broaden_table<'py>(
+    py: Python<'py>,
+    energies: Vec<f64>,
+    columns: Vec<Vec<f64>>,
+    awr: f64,
+    temperature: f64,
+    seeds: Vec<f64>,
+    tol: f64,
+    atol: f64,
+    min_rel_width: f64,
+) -> PyResult<(Array<'py>, Vec<Array<'py>>)> {
+    check_columns(&energies, &columns)?;
+    if seeds.len() < 2 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "need at least two seeds",
+        ));
+    }
+    let (grid, rows) = py.detach(|| {
+        let cold = doppler::ColdTable::new(&energies, &columns, awr, temperature);
+        doppler::broaden_table(&cold, &seeds, tol, atol, min_rel_width)
+    });
+    Ok((
+        grid.into_pyarray(py),
+        columns_to_arrays(py, columns.len(), &rows),
     ))
 }
 
@@ -204,5 +372,11 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_reconstruct, m)?)?;
     m.add_function(wrap_pyfunction!(tab1_eval, m)?)?;
     m.add_function(wrap_pyfunction!(k_constant, m)?)?;
+    m.add_function(wrap_pyfunction!(pointwise_table, m)?)?;
+    m.add_function(wrap_pyfunction!(py_fsum, m)?)?;
+    m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;
+    m.add_function(wrap_pyfunction!(doppler_thin, m)?)?;
+    m.add_function(wrap_pyfunction!(doppler_broaden_table, m)?)?;
     Ok(())
 }
