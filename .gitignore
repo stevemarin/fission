@@ -11,3 +11,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# ENDF/B-VIII.1 data (downloaded on demand)
+endf-data/
