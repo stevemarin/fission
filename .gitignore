@@ -14,3 +14,7 @@ wheels/
 
 # ENDF/B-VIII.1 data (downloaded on demand)
 endf-data/
+
+# Rust build output
+target/
+*.so

@@ -18,7 +18,7 @@ PIN_NUCLIDES := H1 O16 U234 U235 U238 Zr90 Zr91 Zr92 Zr94 Zr96 B10 B11
 PIN_THERMAL  := HinH2O OinUO2 UinUO2
 
 .DEFAULT_GOAL := help
-.PHONY: help sync test test-fast lint format format-check typecheck check fix \
+.PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
         data show scan rm clean
 
 help:  ## list targets
@@ -32,6 +32,12 @@ sync:  ## install/update the project environment from uv.lock
 # ---------------------------------------------------------------- quality
 test:  ## run all tests (ARGS="..." passes extra pytest options)
 	$(UV) run pytest -q $(ARGS)
+
+test-slow:  ## run only the slow physics checks (full resonance reconstructions)
+	$(UV) run pytest -q -m slow $(ARGS)
+
+test-rust:  ## Rust unit tests (cargo)
+	cargo test --quiet
 
 test-fast:  ## run tests, stop at first failure
 	$(UV) run pytest -q -x $(ARGS)
@@ -52,7 +58,7 @@ fix:  ## auto-fix lint issues, then format
 	$(UV) run ruff check --fix $(SRC)
 	$(UV) run ruff format $(SRC)
 
-check: lint format-check typecheck test  ## everything CI would run
+check: lint format-check typecheck test test-rust  ## everything CI would run (not slow)
 
 # ---------------------------------------------------------------- data
 data:  ## fetch the ENDF/B-VIII.1 evaluations needed for the pin cell
@@ -68,6 +74,6 @@ rm:  ## Reich-Moore vs SLBW across a resonance (NUC=U238 E=6.674 WIDTHS=6)
 	$(PY) -m nodal.endf.reich_moore $(NUC) $(E) --widths $(WIDTHS)
 
 # ---------------------------------------------------------------- housekeeping
-clean:  ## remove caches (keeps endf-data/)
-	rm -rf .pytest_cache .mypy_cache .ruff_cache
+clean:  ## remove caches and Rust build output (keeps endf-data/)
+	rm -rf .pytest_cache .mypy_cache .ruff_cache target
 	find . -name __pycache__ -type d -prune -not -path './.venv/*' -exec rm -rf {} +

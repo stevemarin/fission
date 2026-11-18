@@ -1,0 +1,15 @@
+[package]
+name = "nodal-rust"
+version = "0.1.0"
+edition = "2024"
+description = "Compute kernels for the nodal lattice-physics code (Rust ports of Python references)"
+publish = false
+
+[lib]
+name = "_rust"
+crate-type = ["cdylib", "rlib"]
+path = "rust/src/lib.rs"
+
+[dependencies]
+numpy = "0.30.0"
+pyo3 = { version = "0.30.1", features = ["abi3-py314"] }

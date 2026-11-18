@@ -7,11 +7,25 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "numpy>=2.5.5",
 ]
 
 [build-system]
-requires = ["uv_build>=0.13.7,<0.14.0"]
-build-backend = "uv_build"
+requires = ["maturin>=1.13,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+# Python package in src/nodal; the Rust crate (Cargo.toml, rust/src) builds nodal._rust
+python-source = "src"
+module-name = "nodal._rust"
+
+[tool.uv]
+# rebuild the extension whenever Rust sources change
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "rust/**/*.rs" },
+]
 
 [dependency-groups]
 dev = [
@@ -22,3 +36,5 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: long-running physics checks (run with `make test-slow`)"]
+addopts = "-m 'not slow'"

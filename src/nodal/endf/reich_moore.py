@@ -148,33 +148,56 @@ def solve_spin_group(sg: SpinGroup, energy: float) -> SpinGroupSolution:
     return SpinGroupSolution(u_nn, row, k, phi, gamma_flux)
 
 
-def reich_moore(rr: ResolvedRange, energy: float) -> ResonanceXS:
-    """Reich-Moore elastic, capture and fission cross sections (barns) at one energy."""
-    elastic = capture = fission = 0.0
+@dataclass(frozen=True)
+class PotentialTerm:
+    """Hard-sphere scattering of (l, J) combinations that have no resonances.
+
+    `weight` is the spin weight not covered by resonant spin groups: summed
+    over all J, g_J adds up to 2l+1, so weight = (2l+1) - sum of resonant g_J.
+    """
+
+    l: int
+    weight: float
+    awri: float
+    a: float
+    ap: float
+
+    def __call__(self, energy: float) -> float:
+        k = wave_number(energy, self.awri)
+        _, _, phi = penetrability_shift_phase(self.l, k * self.a, k * self.ap)
+        return 4.0 * math.pi / (k * k) * self.weight * math.sin(phi) ** 2
+
+
+def potential_terms(rr: ResolvedRange) -> list[PotentialTerm]:
+    """Potential scattering not carried by any spin group, including l values
+    listed only so that potential scattering converges (l < NLSC)."""
     g_used: dict[int, float] = defaultdict(float)
     for sg in spin_groups(rr):
-        sol = solve_spin_group(sg, energy)
-        g = spin_factor(sg.j, rr.spi)
-        g_used[sg.l] += g
-        pk = math.pi / (sol.k * sol.k)
-        elastic += pk * g * abs(1.0 - sol.u_nn) ** 2
-        fission += 4.0 * pk * g * sum(abs(x) ** 2 for x in sol.row[1:])
-        capture += pk * g * sol.gamma_flux
-
-    # hard-sphere scattering for (l, J) combinations without resonances,
-    # including l values listed only for convergence of potential scattering
+        g_used[sg.l] += spin_factor(sg.j, rr.spi)
     awri = rr.groups[0].awri
     radii = {lg.l: (lg.apl if lg.apl > 0 else rr.ap) for lg in rr.groups}
+    terms = []
     for l in range(max(rr.nlsc, len(rr.groups))):
         missing = (2 * l + 1) - g_used[l]
         if missing > 1e-12:
             ap = radii.get(l, rr.ap)
-            k = wave_number(energy, awri)
-            _, _, phi = penetrability_shift_phase(
-                l, k * channel_radius(awri, ap, rr.naps), k * ap
+            terms.append(
+                PotentialTerm(l, missing, awri, channel_radius(awri, ap, rr.naps), ap)
             )
-            elastic += 4.0 * math.pi / (k * k) * missing * math.sin(phi) ** 2
+    return terms
 
+
+def reich_moore(rr: ResolvedRange, energy: float) -> ResonanceXS:
+    """Reich-Moore elastic, capture and fission cross sections (barns) at one energy."""
+    elastic = capture = fission = 0.0
+    for sg in spin_groups(rr):
+        sol = solve_spin_group(sg, energy)
+        g = spin_factor(sg.j, rr.spi)
+        pk = math.pi / (sol.k * sol.k)
+        elastic += pk * g * abs(1.0 - sol.u_nn) ** 2
+        fission += 4.0 * pk * g * sum(abs(x) ** 2 for x in sol.row[1:])
+        capture += pk * g * sol.gamma_flux
+    elastic += sum(term(energy) for term in potential_terms(rr))
     return ResonanceXS(elastic=elastic, capture=capture, fission=fission)
 
 
@@ -185,24 +208,11 @@ def total_from_optical_theorem(rr: ResolvedRange, energy: float) -> float:
     when the collision matrix is unitary (used as a consistency check).
     """
     total = 0.0
-    g_used: dict[int, float] = defaultdict(float)
     for sg in spin_groups(rr):
         sol = solve_spin_group(sg, energy)
         g = spin_factor(sg.j, rr.spi)
-        g_used[sg.l] += g
         total += 2.0 * math.pi / (sol.k * sol.k) * g * (1.0 - sol.u_nn.real)
-    awri = rr.groups[0].awri
-    radii = {lg.l: (lg.apl if lg.apl > 0 else rr.ap) for lg in rr.groups}
-    for l in range(max(rr.nlsc, len(rr.groups))):
-        missing = (2 * l + 1) - g_used[l]
-        if missing > 1e-12:
-            ap = radii.get(l, rr.ap)
-            k = wave_number(energy, awri)
-            _, _, phi = penetrability_shift_phase(
-                l, k * channel_radius(awri, ap, rr.naps), k * ap
-            )
-            total += 4.0 * math.pi / (k * k) * missing * math.sin(phi) ** 2
-    return total
+    return total + sum(term(energy) for term in potential_terms(rr))
 
 
 def main(argv: list[str] | None = None) -> None:
