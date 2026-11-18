@@ -32,7 +32,7 @@ make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
-make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
+make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make secondary   # quick CLIs
 ```
 
 - Everything runs through `uv run`. Editing `rust/**/*.rs` or `Cargo.toml`
@@ -52,13 +52,18 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
   `mlbw`, `reich_moore`), tables (`reconstruct` adaptive bisection,
   `pointwise` full-range tables, `cache` disk cache), `fast.py` = thin
   wrappers over the Rust kernels.
+- `src/fission/endf/distributions/`: secondary neutrons: `nu` (MF1
+  452/455/456, delayed groups, MF6/MT18 P(nu)), `angular` (MF4), `energy`
+  (MF5 LF=1,5), `mf6` (neutron products, LAW 0/<0/1/2), `kinematics`
+  (two-body CM->LAB, Kalbach-Mann), `incident` (incl. unit-base
+  interpolation). A subpackage, so it is outside the table-cache fingerprint.
 - `rust/src/`: PyO3 module `fission._rust` (stubs in `src/fission/_rust.pyi`).
   Rust structs read Python objects by attribute via `FromPyObject`, so the
   Python dataclasses are the interface.
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `10-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `11-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -83,6 +88,10 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
   identical to serial). `pointwise(use_rust=True)` runs the whole full-range
   refinement in Rust (`rust/src/pointwise.rs`, exact `fsum.rs` port of
   `math.fsum`); `use_rust=False` is the all-Python reference.
+- ENDF/B-VIII.1 data quirks found so far: the nu_p implied by MF6/MT18 P(nu)
+  differs from MF1/MT456 by up to 1.2% (U-235) / 1.9% (U-238), so use only
+  normalized P(nu) with nu-bar from MF1; U-238 chi at 20 MeV integrates to
+  1.0003 (renormalize spectra in group averaging).
 - Physics numbers in docs or tests must be computed by this code or taken
   from a cited source, not from memory. Known checks: U-238 thermal capture
   2.682 b, U-235 fission 586.2 b, U-238 capture RI 275.28 b.
@@ -93,13 +102,13 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm ...   # quick CLIs
 ## Roadmap
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
-theory docs ch. 0–9. Data and transport are independent tracks that meet at
+A1 Doppler broadening, A2 secondary-neutron data; theory docs ch. 0–11. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
-  - **A1 Doppler broadening (current)**
-  - A2 rest of the reader (ν̄, χ, MF4/MF5/MF6)
-  - A3 group averaging (σ_g, νσ_f, χ, P0/P1 matrices)
+  - A1 Doppler broadening (done)
+  - A2 rest of the reader: ν̄, χ, MF4/MF5/MF6 (done)
+  - **A3 group averaging (next)** (σ_g, νσ_f, χ, P0/P1 matrices)
   - A4 thermal scattering (free gas, then S(α,β))
   - A5 infinite-medium spectrum + k∞ of a homogenized pin cell
 - **B: transport**

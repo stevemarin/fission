@@ -23,6 +23,15 @@ from fission.data import EndfLibrary
 from fission.endf import Evaluation, fast
 from fission.endf.cache import cached_pointwise
 from fission.endf.channel import penetrability_shift_phase
+from fission.endf.distributions.angular import angular_distribution
+from fission.endf.distributions.energy import energy_distribution
+from fission.endf.distributions.kinematics import kalbach_mann
+from fission.endf.distributions.mf6 import energy_angle
+from fission.endf.distributions.nu import (
+    delayed_groups,
+    multiplicity_distribution,
+    nu_bar,
+)
 from fission.endf.interpolation import interpolate
 from fission.endf.pointwise import PointwiseTable
 from fission.endf.reconstruct import adaptive_grid, reconstruct
@@ -461,6 +470,124 @@ def fig_shielded_ri():
     save(fig, "shielded_ri")
 
 
+# ---------------------------------------------------------------- chapter 9
+def fig_nu_multiplicity():
+    u235, u238 = evaluation("U235"), evaluation("U238")
+    fig, (a, b) = plt.subplots(1, 2, figsize=(8.6, 3.6))
+    e = np.array(logspace(2e-5, 2e7, 600))
+    for ev, name, color in ((u235, "U-235", C[0]), (u238, "U-238", C[1])):
+        a.semilogx(
+            e, [nu_bar(ev, 452)(x) for x in e], color=color, label=f"{name} total"
+        )
+        a.semilogx(
+            e,
+            [100 * nu_bar(ev, 455)(x) for x in e],
+            color=color,
+            ls="--",
+            label=f"{name} delayed ×100",
+        )
+    a.set(
+        xlabel="incident energy (eV)", ylabel=r"$\bar\nu$", title="neutrons per fission"
+    )
+    a.legend(fontsize=8)
+    width = 0.38
+    for k, (ev, name, energy, color) in enumerate(
+        ((u235, "U-235, thermal", 0.0253, C[0]), (u238, "U-238, 2 MeV", 2e6, C[1]))
+    ):
+        md = multiplicity_distribution(ev)
+        p = md.probabilities(energy)[:9]
+        b.bar(np.arange(len(p)) + (k - 0.5) * width, p, width, color=color, label=name)
+    b.set(
+        xlabel=r"prompt neutrons $\nu$",
+        ylabel=r"$P(\nu)$",
+        title="multiplicity distribution",
+    )
+    b.legend(fontsize=8)
+    save(fig, "nu_multiplicity")
+
+
+def fig_fission_spectrum():
+    ev = evaluation("U235")
+    chi = energy_distribution(ev, 18)
+    groups = delayed_groups(ev)
+    e_out = np.array(logspace(1e3, 2e7, 500))
+    fig, ax = plt.subplots(figsize=(6.8, 4.0))
+    for energy, color, label in (
+        (0.0253, C[0], "prompt, thermal fission"),
+        (1.4e7, C[1], "prompt, 14 MeV fission"),
+    ):
+        ax.loglog(
+            e_out / 1e6, [1e6 * chi(energy, x) for x in e_out], color=color, label=label
+        )
+    delayed = [1e6 * groups.spectra(0.0253, x) for x in e_out]
+    ax.loglog(e_out / 1e6, delayed, color=C[2], label="delayed (6 groups)")
+    ax.set(
+        xlabel="outgoing energy (MeV)",
+        ylabel=r"$\chi(E')$ (1/MeV)",
+        ylim=(1e-4, 3),
+        title="U-235 fission neutron spectra",
+    )
+    ax.legend()
+    save(fig, "fission_spectrum")
+
+
+def fig_elastic_angular():
+    fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.6), sharey=False)
+    mu = np.linspace(-1, 1, 401)
+    for ax, nuc in zip(axes, ("O16", "U238"), strict=True):
+        ad = angular_distribution(evaluation(nuc), 2)
+        for energy, color in zip((1e4, 1e6, 3e6, 1e7), C, strict=False):
+            ax.semilogy(
+                mu,
+                [ad(energy, m) for m in mu],
+                color=color,
+                label=f"{energy / 1e6:g} MeV",
+            )
+        ax.set(xlabel=r"$\mu_{\mathrm{cm}}$", ylabel=r"$f(\mu)$")
+        ax.legend(fontsize=8)
+    axes[0].set_title("O-16 elastic (CM)")
+    axes[1].set_title("U-238 elastic (CM)")
+    save(fig, "elastic_angular")
+
+
+def fig_continuum():
+    ev = evaluation("U238")
+    c = energy_angle(ev, 91).products[0].distribution
+    fig, (a, b) = plt.subplots(1, 2, figsize=(8.6, 3.6))
+    for energy, color in zip((2e6, 5e6, 1.4e7), C, strict=False):
+        e_out = np.linspace(0, energy, 600)
+        a.plot(
+            e_out / 1e6,
+            [1e6 * c.energy_pdf(energy, x) for x in e_out],
+            color=color,
+            label=f"E = {energy / 1e6:g} MeV",
+        )
+    a.set(
+        xlabel="outgoing energy (MeV)",
+        ylabel="f(E') (1/MeV)",
+        xlim=(0, 14),
+        title="U-238 continuum inelastic (MT91)",
+    )
+    a.legend(fontsize=8)
+    mu = np.linspace(-1, 1, 201)
+    for (aa, r), color in zip(
+        ((0.3, 0.0), (0.3, 1.0), (2.0, 0.0), (2.0, 1.0)), C, strict=False
+    ):
+        b.plot(
+            mu,
+            [kalbach_mann(m, aa, r) for m in mu],
+            color=color,
+            label=f"a = {aa}, r = {r}",
+        )
+    b.set(
+        xlabel=r"$\mu_{\mathrm{cm}}$",
+        ylabel=r"$f(\mu)$",
+        title="Kalbach-Mann angular shapes",
+    )
+    b.legend(fontsize=8)
+    save(fig, "continuum")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -476,5 +603,9 @@ if __name__ == "__main__":
         fig_thermal_rise,
         fig_corner_rounding,
         fig_shielded_ri,
+        fig_nu_multiplicity,
+        fig_fission_spectrum,
+        fig_elastic_angular,
+        fig_continuum,
     ):
         make()

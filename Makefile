@@ -20,7 +20,7 @@ TEMPS        ?= 293.6 600 900 1200
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        data tables doppler-tables clean-tables show scan rm doppler docs figures clean
+        data tables doppler-tables clean-tables show scan rm doppler secondary docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -82,6 +82,9 @@ clean-tables:  ## delete all cached pointwise and broadened tables
 
 rm:  ## Reich-Moore vs SLBW across a resonance (NUC=U238 E=6.674 WIDTHS=6)
 	$(PY) -m fission.endf.reich_moore $(NUC) $(E) --widths $(WIDTHS)
+
+secondary:  ## nu, delayed groups, fission spectrum, angular data (NUC=U235)
+	$(PY) -m fission.endf.distributions $(NUC)
 
 doppler:  ## Doppler-broadened peak and area of one resonance vs T (NUC=U238 E=6.674)
 	$(PY) -m fission.processing.doppler $(NUC) $(E)

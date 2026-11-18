@@ -182,7 +182,7 @@ speed is set by the target motion alone, so the reaction rate is constant
 and $\bar\sigma \propto 1/v$. For hydrogen the effect is large: the free-gas
 H-1 elastic cross section at 0.0253 eV is 30.1 b at 293.6 K instead of
 20.4 b. Hydrogen in water is not a free gas, though; its thermal scattering
-comes from $S(\alpha,\beta)$ data (chapter 9).
+comes from $S(\alpha,\beta)$ data (chapter 10).
 
 ![H-1 elastic scattering for a free-gas target. Below about $k_BT$ the targets move faster than the neutron and the cross section rises as 1/v.](../figures/thermal_rise.svg)
 
@@ -289,7 +289,7 @@ Most of the 0 K points of U-238 resolve narrow p-wave resonances (section
 Broadening conserves the area of each resonance, so it does not change the
 **infinitely dilute** resonance integral. It does change the capture rate in
 a real fuel pin, where the flux dips inside strong resonances
-(self-shielding, chapter 9). A preview with the narrow-resonance flux
+(self-shielding, chapter 10). A preview with the narrow-resonance flux
 $\phi(E) \propto 1/[E(\sigma_t(E) + \sigma_0)]$, where $\sigma_0$ is the
 background cross section per U-238 atom, gives the **effective resonance
 integral** $\int \sigma_\gamma\,\sigma_0/(\sigma_t + \sigma_0)\,\mathrm{d}E/E$

@@ -70,6 +70,10 @@ source or a standard text.
   Resonances: Resonance Properties and Thermal Cross Sections Z = 1–100*,
   6th ed., Elsevier (2018). Source of the thermal values and resonance
   parameters used as checks. **(not free)**
+- []{#ref-kalbach}**[Kalbach]** C. Kalbach, "Systematics of Continuum
+  Angular Distributions: Extensions to Higher Energies", *Physical Review C*
+  **37**, 2350 (1988). The angular systematics used in ENDF MF6 (LANG = 2).
+  <https://doi.org/10.1103/PhysRevC.37.2350> **(not free)**
 - []{#ref-cullen}**[Cullen & Weisbin]** D. E. Cullen, C. R. Weisbin, "Exact
   Doppler Broadening of Tabulated Cross Sections", *Nuclear Science and
   Engineering* **60**, 199–229 (1976). <https://doi.org/10.13182/NSE76-1>

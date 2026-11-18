@@ -1,7 +1,8 @@
 # What comes next
 
 Chapters 7 and 8 give pointwise tables at any temperature, with averaged
-("infinitely dilute") cross sections in the unresolved range. In a fuel pin,
+("infinitely dilute") cross sections in the unresolved range; chapter 9 adds
+the data on the neutrons that reactions emit. In a fuel pin,
 though, the neutron flux itself has resonance structure, and below a few eV
 the moderator atoms are not free. This chapter previews the next processing
 steps; each will get its own chapter once implemented.
