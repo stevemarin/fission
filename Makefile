@@ -18,6 +18,7 @@ PIN_NUCLIDES := H1 O16 U234 U235 U238 Zr90 Zr91 Zr92 Zr94 Zr96 B10 B11
 PIN_THERMAL  := HinH2O OinUO2 UinUO2
 TEMPS        ?= 293.6 600 900 1200
 T            ?= 293.6
+WATER_TEMPS  ?= 293.6 600 900
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
@@ -78,8 +79,9 @@ tables:  ## build (or load) cached pointwise tables for the pin-cell nuclides
 doppler-tables:  ## build (or load) Doppler-broadened tables (TEMPS="293.6 600 900 1200")
 	$(PY) -m fission.processing.cache $(PIN_NUCLIDES) --temps $(TEMPS)
 
-groups:  ## build (or load) multigroup libraries, XMAS-172 (TEMPS="293.6 600 900 1200")
+groups:  ## build (or load) multigroup libraries, XMAS-172, free gas + H in H2O
 	$(PY) -m fission.processing.library $(PIN_NUCLIDES) --temps $(TEMPS) --quiet
+	$(PY) -m fission.processing.library H1 --thermal HinH2O --temps $(WATER_TEMPS) --quiet
 
 clean-tables:  ## delete all cached pointwise, broadened and multigroup tables
 	rm -rf endf-data/pointwise endf-data/doppler endf-data/groups

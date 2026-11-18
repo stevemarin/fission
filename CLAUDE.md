@@ -30,7 +30,7 @@ make fix          # ruff --fix + format
 make data         # download pin-cell evaluations into endf-data/
 make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
-make groups       # XMAS-172 multigroup libraries (endf-data/groups/); make library NUC=U238 T=293.6
+make groups       # XMAS-172 libraries, free-gas thermal + H in H2O (endf-data/groups/); make library NUC=U238 T=293.6
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
 make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make secondary   # quick CLIs
@@ -46,7 +46,8 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `src/fission/processing/`: stages that take 0 K tables as input:
   `doppler.py` (+ `cache.py`), group averaging `groupr.py` with `groups.py`
   (XMAS-172 from NJOY groupr.f90), `weights.py` (NJOY iwt=4, slope-matched
-  breaks), `library.py` (GroupLibrary cache + CLI). Kept outside `endf/` so
+  breaks), `library.py` (GroupLibrary cache + CLI, `thermal=` option),
+  `thermal.py` (free-gas and S(alpha,beta) kernels, `with_thermal`). Kept outside `endf/` so
   edits do not invalidate the 0 K table cache.
 - `src/fission/data.py`: ENDF/B-VIII.1 downloader (NNDC tarballs, SHA-1 checked)
   → `endf-data/` (gitignored).
@@ -59,14 +60,15 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   452/455/456, delayed groups, MF6/MT18 P(nu)), `angular` (MF4), `energy`
   (MF5 LF=1,5), `mf6` (neutron products, LAW 0/<0/1/2), `kinematics`
   (two-body CM->LAB, Kalbach-Mann), `incident` (incl. unit-base
-  interpolation). A subpackage, so it is outside the table-cache fingerprint.
+  interpolation), `sab` (MF7 S(alpha,beta) reader). A subpackage, so it is
+  outside the 0 K table-cache fingerprint (but inside the processing one).
 - `rust/src/`: PyO3 module `fission._rust` (stubs in `src/fission/_rust.pyi`).
   Rust structs read Python objects by attribute via `FromPyObject`, so the
   Python dataclasses are the interface.
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `12-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `13-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -90,9 +92,13 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - Group averaging: group 0 = highest energy; S[l, g, g'] = transfer g -> g'
   (LAB P_l). All constants are Int_g sigma w K with K tabulated on a coarse
   kernel grid; only the hat integrals A[g, j] see the fine grid (Rust
-  `groupr.rs`). Elastic uses target-at-rest kinematics (no upscatter) until
-  A4; P0 rows lose flux below 1e-5 eV in the lowest groups (H: 1%).
-  Libraries are infinitely dilute (self-shielding is C1).
+  `groupr.rs`). Libraries are infinitely dilute (self-shielding is C1).
+- Thermal (A4): below 4 eV the elastic rows are replaced by a free-gas kernel
+  (default, normalized to the broadened elastic table, as NJOY) or by MF7
+  S(alpha,beta) (`thermal="HinH2O"`, absolute). Kernel tabulated every 0.02
+  in lethargy (detailed balance ~0.1%); cosine integral in s = sqrt(alpha).
+  LAT=1 rescales only the table lookup; NJOY's SCT fallback rules copied.
+  H in H2O exists only at the file's temperatures (no 1200 K).
 - Rust refinement is threaded with std only (`adaptive_grid_parallel`,
   identical to serial). `pointwise(use_rust=True)` runs the whole full-range
   refinement in Rust (`rust/src/pointwise.rs`, exact `fsum.rs` port of
@@ -111,16 +117,16 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 ## Roadmap
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
-A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries;
-theory docs ch. 0–12. Data and transport are independent tracks that meet at
+A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
+A4 thermal scattering; theory docs ch. 0–13. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
   - A1 Doppler broadening (done)
   - A2 rest of the reader: ν̄, χ, MF4/MF5/MF6 (done)
   - A3 group averaging: σ_g, νσ_f, χ, P0–P3 matrices (done)
-  - **A4 thermal scattering (next)**: free gas, then S(α,β)
-  - A5 infinite-medium spectrum + k∞ of a homogenized pin cell
+  - A4 thermal scattering: free gas + S(α,β) for H in H2O (done)
+  - **A5 infinite-medium spectrum + k∞ of a homogenized pin cell (next)**
 - **B: transport**
   - B1 pin-cell geometry + cyclic ray tracing
   - B2 MOC, verified on C5G7 7-group data

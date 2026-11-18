@@ -22,9 +22,11 @@ import numpy as np
 from ..data import EndfLibrary
 from ..endf import Evaluation
 from ..endf import cache as endf_cache
+from ..endf.distributions.sab import scattering_law
 from .cache import cached_doppler, code_fingerprint
 from .groupr import GroupLibrary, group_library
 from .groups import XMAS_172, GroupStructure
+from .thermal import FreeGas, Tabulated, with_thermal
 from .weights import ThermalSlowingDownFission
 
 FORMAT_VERSION = 1
@@ -50,6 +52,7 @@ def save_library(path: Path, lib: GroupLibrary, meta: dict[str, Any]) -> None:
         "meta": np.array(json.dumps({
             **meta, "nuclide": lib.nuclide, "temperature": lib.temperature,
             "groups": lib.groups.name, "weight": lib.weight, "lmax": lib.lmax, "notes": lib.notes,
+            "thermal": lib.thermal, "thermal_cutoff": lib.thermal_cutoff,
         })),
     }  # fmt: skip
     tmp = path.with_name(path.name + ".tmp.npz")
@@ -69,7 +72,8 @@ def load_library(path: Path, key: str | None = None) -> GroupLibrary | None:
             return GroupLibrary(
                 meta["nuclide"], meta["temperature"], groups, meta["weight"], meta["lmax"],
                 data["flux"], sigma, data["scatter_elastic"], data["scatter_inelastic"],
-                notes=list(meta["notes"]), **optional,
+                notes=list(meta["notes"]), thermal=meta.get("thermal", "target at rest"),
+                thermal_cutoff=meta.get("thermal_cutoff", 0.0), **optional,
             )  # fmt: skip
     except OSError, ValueError, KeyError, EOFError:
         return None
@@ -81,11 +85,17 @@ def cached_groups(
     *,
     groups: GroupStructure = XMAS_172,
     lmax: int = 3,
+    thermal: str | None = "free-gas",
     lib: EndfLibrary | None = None,
     refresh: bool = False,
 ) -> GroupLibrary:
     """Infinitely dilute multigroup data, weighted with a Maxwellian at the
-    library temperature, 1/E and a fission spectrum (`weights`)."""
+    library temperature, 1/E and a fission spectrum (`weights`).
+
+    thermal: elastic scattering below 4 eV from a free gas ("free-gas", the
+    default), a thermal scattering law of the ENDF thermal sublibrary (e.g.
+    "HinH2O" for H1), or None for a target at rest.
+    """
     lib = lib or EndfLibrary()
     weight = ThermalSlowingDownFission.at(temperature)
     meta = {
@@ -98,11 +108,12 @@ def cached_groups(
         ).hexdigest(),
         "weight": weight.describe(),
         "lmax": lmax,
+        "thermal": thermal,
         "code": code_fingerprint(),
     }
     key = hashlib.sha256(json.dumps(meta, sort_keys=True).encode()).hexdigest()
     directory = lib.root / "groups"
-    stem = f"{nuclide}-{temperature:g}K-{groups.size}g"
+    stem = f"{nuclide}-{temperature:g}K-{groups.size}g-{thermal or 'static'}"
     path = directory / f"{stem}-{key[:16]}.npz"
     if not refresh and path.exists():
         cached = load_library(path, key)
@@ -113,10 +124,21 @@ def cached_groups(
     gl = group_library(
         ev, table, groups, weight, nuclide=nuclide, temperature=temperature, lmax=lmax
     )
+    if thermal == "free-gas":
+        model: FreeGas | Tabulated = FreeGas(ev.header.awr, temperature)
+        gl = with_thermal(gl, model, weight, (table.energies, table.xs[2]))
+    elif thermal:
+        law = scattering_law(Evaluation.from_file(lib.thermal(thermal)), temperature)
+        gl = with_thermal(gl, Tabulated(law), weight)
     directory.mkdir(parents=True, exist_ok=True)
     save_library(path, gl, {**meta, "key": key})
+    # every thermal variant of this nuclide/temperature/structure: only entries
+    # built by other code are deleted
     endf_cache.prune_stale(
-        directory, f"{stem}-*.npz", keep=path, code=code_fingerprint()
+        directory,
+        f"{nuclide}-{temperature:g}K-{groups.size}g-*.npz",
+        keep=path,
+        code=code_fingerprint(),
     )
     return gl
 
@@ -124,7 +146,9 @@ def cached_groups(
 def summary(gl: GroupLibrary) -> str:
     g = gl.groups
     lines = [
-        f"{gl.nuclide} at {gl.temperature:g} K, {g.name}, weight {gl.weight}, P{gl.lmax}"
+        f"{gl.nuclide} at {gl.temperature:g} K, {g.name}, weight {gl.weight}, P{gl.lmax}",
+        f"thermal scattering: {gl.thermal}"
+        + (f" below {gl.thermal_cutoff:g} eV" if gl.thermal_cutoff else ""),
     ]
     head = f"{'g':>4} {'E_low (eV)':>11} {'E_high (eV)':>11} {'total':>9} {'elastic':>9} {'capture':>9}"
     if gl.nu_fission is not None:
@@ -145,6 +169,12 @@ def summary(gl: GroupLibrary) -> str:
     lines.append(
         f"elastic P0 rows reproduce sigma_el to {worst:.1e} (all but the 3 lowest groups)"
     )
+    th = g.find(0.0253)
+    if th is not None:  # group 0 is the fastest: g' < g is upscattering
+        up = np.tril(gl.scatter_elastic[0], -1)[th].sum()
+        lines.append(
+            f"thermal group {th}: upscatter {up:.3g} b of {el[th]:.3g} b scattering"
+        )
     return "\n".join(lines)
 
 
@@ -157,13 +187,19 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("nuclides", nargs="+")
     ap.add_argument("--temps", type=float, nargs="+", default=[293.6])
     ap.add_argument("--refresh", action="store_true")
+    ap.add_argument(
+        "--thermal", default="free-gas", help="free-gas, none, or e.g. HinH2O"
+    )
     ap.add_argument("--quiet", action="store_true", help="only report build times")
     args = ap.parse_args(argv)
     lib = EndfLibrary()
     for nuclide in args.nuclides:
         for temp in args.temps:
             t0 = time.perf_counter()
-            gl = cached_groups(nuclide, temp, lib=lib, refresh=args.refresh)
+            thermal = None if args.thermal == "none" else args.thermal
+            gl = cached_groups(
+                nuclide, temp, thermal=thermal, lib=lib, refresh=args.refresh
+            )
             print(f"{nuclide} {temp:g} K: {time.perf_counter() - t0:.1f} s")
             if not args.quiet:
                 print(summary(gl), "\n")

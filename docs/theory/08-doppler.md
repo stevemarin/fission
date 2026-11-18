@@ -289,7 +289,7 @@ Most of the 0 K points of U-238 resolve narrow p-wave resonances (section
 Broadening conserves the area of each resonance, so it does not change the
 **infinitely dilute** resonance integral. It does change the capture rate in
 a real fuel pin, where the flux dips inside strong resonances
-(self-shielding, chapter 11). A preview with the narrow-resonance flux
+(self-shielding, chapter 12). A preview with the narrow-resonance flux
 $\phi(E) \propto 1/[E(\sigma_t(E) + \sigma_0)]$, where $\sigma_0$ is the
 background cross section per U-238 atom, gives the **effective resonance
 integral** $\int \sigma_\gamma\,\sigma_0/(\sigma_t + \sigma_0)\,\mathrm{d}E/E$

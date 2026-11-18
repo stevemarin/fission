@@ -2,10 +2,10 @@
 
 Chapters 7 and 8 give pointwise tables at any temperature, with averaged
 ("infinitely dilute") cross sections in the unresolved range; chapter 9 adds
-the data on the neutrons that reactions emit, and chapter 10 condenses
-everything into infinitely dilute multigroup constants. In a fuel pin,
-though, the neutron flux itself has resonance structure, and below a few eV
-the moderator atoms are not free. This chapter previews the next processing
+the data on the neutrons that reactions emit, chapter 10 condenses
+everything into infinitely dilute multigroup constants, and chapter 11 adds
+thermal scattering. In a fuel pin, though, the neutron flux itself has
+resonance structure. This chapter previews the next processing
 steps; each will get its own chapter once implemented.
 
 ## Self-shielding
@@ -53,23 +53,12 @@ statistical resonance ladders (NJOY's PURR, ch. 23). The unresolved range
 contributes little to U-238's dilute resonance integral (0.9 b of 275 b), but
 it matters for fast spectra and for the Doppler coefficient.
 
-## Thermal scattering
-
-Below a few eV, the hydrogen in water is not a free atom. Chemical binding,
-molecular vibration and rotation change how neutrons exchange energy with it.
-The free-atom H-1 cross section of chapter 1 (20.4 b) is replaced by the
-**thermal scattering law** $S(\alpha, \beta)$ from the thermal sublibrary
-(MF7, e.g. `tsl-HinH2O`) [[ENDF-102](#ref-endf102) §7; [NJOY](#ref-njoy)
-ch. 7 THERMR, ch. 24 LEAPR]. It sets the shape of the thermal neutron
-spectrum, and with it every thermal reaction rate.
-
 ## Further reading
 
-* [[NJOY](#ref-njoy)] ch. 5 UNRESR, ch. 7 THERMR, ch. 23 PURR (free).
+* [[NJOY](#ref-njoy)] ch. 5 UNRESR, ch. 23 PURR (free).
 * [[Fröhner](#ref-frohner)] §4 (unresolved range, Bondarenko factors)
   (free).
-* [[Bell & Glasstone](#ref-bell)] ch. 7 (neutron thermalization) and ch. 8
-  (resonance absorption: unresolved parameters §8.2, the narrow-resonance
+* [[Bell & Glasstone](#ref-bell)] ch. 8 (resonance absorption: unresolved parameters §8.2, the narrow-resonance
   approximation §8.3, heterogeneous systems §8.4) (free).
 * [[OpenMC](#ref-openmc)] methods documentation: how a modern Monte Carlo
   code represents cross sections (free).

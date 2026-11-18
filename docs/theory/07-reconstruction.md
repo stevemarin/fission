@@ -98,7 +98,7 @@ of the evaluation. In the **unresolved range** all the evaluations used here
 set the flag LSSF = 1. It means MF3 already contains the *infinitely dilute*
 average cross section: the average over many resonances weighted by a flat
 flux [[ENDF-102](#ref-endf102) §2.3, §2.4.17]. Accounting for resonance
-structure there (self-shielding) is left for later (chapter 11). Above the
+structure there (self-shielding) is left for later (chapter 12). Above the
 unresolved range, MF3 is complete.
 
 ### Which reactions, and the total

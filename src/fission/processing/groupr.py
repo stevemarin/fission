@@ -458,6 +458,8 @@ class GroupLibrary:
     chi: np.ndarray | None = None  # total, (nu_p chi_p + nu_d chi_d)/nu_t
     decay_constants: np.ndarray | None = None
     notes: list[str] = field(default_factory=list)
+    thermal: str = "target at rest"  # elastic kernel below thermal_cutoff
+    thermal_cutoff: float = 0.0
 
     @property
     def scatter(self) -> np.ndarray:

@@ -32,6 +32,7 @@ from fission.endf.distributions.nu import (
     multiplicity_distribution,
     nu_bar,
 )
+from fission.endf.distributions.sab import scattering_law
 from fission.endf.interpolation import interpolate
 from fission.endf.pointwise import PointwiseTable
 from fission.endf.reconstruct import adaptive_grid, reconstruct
@@ -42,8 +43,9 @@ from fission.processing.doppler import (
     broadened_at,
     doppler_width,
 )
-from fission.processing.groups import XMAS_172
+from fission.processing.groups import XMAS_172, equal_lethargy
 from fission.processing.library import cached_groups
+from fission.processing.thermal import FreeGas, Tabulated, thermal_kernel
 from fission.processing.weights import ThermalSlowingDownFission
 
 OUT = Path(__file__).parent
@@ -686,6 +688,96 @@ def fig_chi_groups():
     save(fig, "chi_groups")
 
 
+# ---------------------------------------------------------------- chapter 11
+def _water(temperature):
+    return Tabulated(
+        scattering_law(Evaluation.from_file(LIB.thermal("HinH2O")), temperature)
+    )
+
+
+def fig_thermal_xs():
+    e = np.array(logspace(1e-5, 9.0, 70))
+    fig, ax = plt.subplots(figsize=(6.8, 4.0))
+    for model, color, label in (
+        (_water(293.6), C[0], "H in H$_2$O, 293.6 K"),
+        (_water(600.0), C[2], "H in H$_2$O, 600 K"),
+    ):
+        ax.loglog(
+            e,
+            [thermal_kernel(model, XMAS_172, 0, x)[1] for x in e],
+            color=color,
+            label=label,
+        )
+    free = _water(293.6).law.sigma_free
+    gas = FreeGas(0.99917, 293.6)
+    ax.loglog(
+        e,
+        [free * thermal_kernel(gas, XMAS_172, 0, x)[1] for x in e],
+        color=C[1],
+        ls="--",
+        label="free H gas, 293.6 K",
+    )
+    ax.axhline(free, color="0.6", lw=0.8, ls=":")
+    ax.text(2e-5, free * 0.82, "free atom 20.4 b", fontsize=8, color="0.4")
+    ax.set(
+        xlabel="E (eV)",
+        ylabel="scattering cross section per H (b)",
+        title="Hydrogen in water: bound vs. free",
+    )
+    ax.legend()
+    save(fig, "thermal_xs")
+
+
+def fig_thermal_spectra():
+    fine = equal_lethargy(500, 1e-4, 3.0)
+    widths = np.array([fine.bounds(g)[1] - fine.bounds(g)[0] for g in range(fine.size)])
+    mids = np.array(
+        [np.sqrt(fine.bounds(g)[0] * fine.bounds(g)[1]) for g in range(fine.size)]
+    )
+    fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.7))
+    water, free = _water(293.6), FreeGas(0.99917, 293.6)
+    scale = (
+        water.law.sigma_free
+    )  # the FreeGas kernel is per 1 b of free-atom cross section
+    for ax, energy in zip(axes, (0.0253, 0.5), strict=True):
+        kw, _ = thermal_kernel(water, fine, 0, energy)
+        kf, _ = thermal_kernel(free, fine, 0, energy)
+        ax.loglog(mids, kw[0] / widths, color=C[0], label="H in H$_2$O")
+        ax.loglog(mids, scale * kf[0] / widths, color=C[1], ls="--", label="free H gas")
+        ax.axvline(energy, color="0.6", lw=0.8, ls=":")
+        ax.set(
+            xlabel="E' (eV)",
+            ylabel=r"$\sigma(E \to E')$ (b/eV)",
+            xlim=(1e-4, 3),
+            ylim=(1e-2, None),
+            title=f"incident E = {energy:g} eV (293.6 K)",
+        )
+        ax.legend(fontsize=8)
+    save(fig, "thermal_spectra")
+
+
+def fig_thermal_matrix():
+    gl = cached_groups("H1", 293.6, thermal="HinH2O")
+    first = XMAS_172.find(1.0)
+    m = gl.scatter_elastic[0][first:, first:]
+    fig, ax = plt.subplots(figsize=(5.2, 4.4))
+    im = ax.imshow(
+        np.where(m > 1e-4, m, np.nan),
+        norm=matplotlib.colors.LogNorm(vmin=1e-4, vmax=np.nanmax(m)),
+        cmap="viridis",
+        interpolation="nearest",
+        extent=(first - 0.5, XMAS_172.size - 0.5, XMAS_172.size - 0.5, first - 0.5),
+    )
+    ax.plot([first, XMAS_172.size], [first, XMAS_172.size], color="w", lw=0.6)
+    ax.set(
+        xlabel="to group g'",
+        ylabel="from group g",
+        title="H in H$_2$O, $P_0$ below 1 eV (b)\n(left of the diagonal: upscattering)",
+    )
+    fig.colorbar(im, ax=ax, shrink=0.85)
+    save(fig, "thermal_matrix")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -709,5 +801,8 @@ if __name__ == "__main__":
         fig_group_capture,
         fig_scatter_matrices,
         fig_chi_groups,
+        fig_thermal_xs,
+        fig_thermal_spectra,
+        fig_thermal_matrix,
     ):
         make()
