@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import bisect
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 
 from .evaluation import Evaluation
+from .mlbw import mlbw
 from .reich_moore import reich_moore
 from .resonances import ResolvedRange
 from .slbw import ResonanceXS, single_resonance, slbw
@@ -32,7 +33,7 @@ from .slbw import ResonanceXS, single_resonance, slbw
 REACTIONS = ("elastic", "capture", "fission")
 BACKGROUND_MT = {"elastic": 2, "capture": 102, "fission": 18}
 
-Values = tuple[float, float, float]  # (elastic, capture, fission)
+Values = tuple[float, ...]  # one value per reaction, e.g. (elastic, capture, fission)
 
 
 @dataclass
@@ -115,11 +116,13 @@ def adaptive_grid(
     tol: float = 1e-3,
     atol: float = 1e-5,
     min_rel_width: float = 1e-9,
+    unsplittable: Collection[tuple[float, float]] = (),
 ) -> tuple[list[float], list[Values]]:
     """Refine `seeds` until linear interpolation of f is within tolerance.
 
     Depth-first bisection: `left` is the last accepted point, `stack` holds
-    the pending right ends, nearest on top.
+    the pending right ends, nearest on top. Intervals listed in `unsplittable`
+    (pairs of adjacent seeds straddling a discontinuity) are kept as they are.
     """
     energies = [seeds[0]]
     values = [f(seeds[0])]
@@ -129,7 +132,7 @@ def adaptive_grid(
             e1, v1 = energies[-1], values[-1]
             e2, v2 = stack[-1]
             mid = 0.5 * (e1 + e2)
-            if e2 - e1 > min_rel_width * e2:
+            if e2 - e1 > min_rel_width * e2 and (e1, e2) not in unsplittable:
                 vm = f(mid)
                 if not _converged(v1, vm, v2, tol, atol):
                     stack.append((mid, vm))
@@ -150,7 +153,7 @@ def resolved_range_xs(
     if rr is None:
         raise ValueError("no resolved resonance range")
     if formalism is None:
-        formalism = reich_moore if rr.lrf == 3 else slbw
+        formalism = {1: slbw, 2: mlbw, 3: reich_moore}[rr.lrf]
     backgrounds = {
         name: ev.cross_section(mt) if mt in ev.reactions else None
         for name, mt in BACKGROUND_MT.items()

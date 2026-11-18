@@ -16,8 +16,15 @@ class ReichMoore:
     def __call__(self, energy: float) -> tuple[float, float, float]: ...
     def evaluate(self, energies: Array) -> tuple[Array, Array, Array]: ...
 
+class Mlbw:
+    def __init__(
+        self, spin_groups: Sequence[object], potentials: Sequence[object], spi: float
+    ) -> None: ...
+    def __call__(self, energy: float) -> tuple[float, float, float]: ...
+    def evaluate(self, energies: Array) -> tuple[Array, Array, Array]: ...
+
 def reconstruct(
-    model: ReichMoore,
+    model: ReichMoore | Mlbw,
     backgrounds: Sequence[object | None],
     seeds: Sequence[float],
     tol: float = ...,

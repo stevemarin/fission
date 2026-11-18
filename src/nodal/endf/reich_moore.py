@@ -63,9 +63,9 @@ class SpinGroup:
 
 
 def spin_groups(rr: ResolvedRange) -> list[SpinGroup]:
-    """Split a Reich-Moore range into (l, J) spin groups."""
-    if rr.lrf != 3:
-        raise ValueError(f"not a Reich-Moore range (LRF={rr.lrf})")
+    """Split a resolved range into (l, J) spin groups (any of SLBW, MLBW, RM)."""
+    if rr.lrf not in (1, 2, 3):
+        raise ValueError(f"unsupported resolved formalism LRF={rr.lrf}")
     groups = []
     for lg in rr.groups:
         if lg.l > 0 and rr.spi > 0 and any(r.j < 0 for r in lg.resonances):
@@ -177,7 +177,7 @@ def potential_terms(rr: ResolvedRange) -> list[PotentialTerm]:
     awri = rr.groups[0].awri
     radii = {lg.l: (lg.apl if lg.apl > 0 else rr.ap) for lg in rr.groups}
     terms = []
-    for l in range(max(rr.nlsc, len(rr.groups))):
+    for l in sorted({lg.l for lg in rr.groups} | set(range(rr.nlsc))):
         missing = (2 * l + 1) - g_used[l]
         if missing > 1e-12:
             ap = radii.get(l, rr.ap)

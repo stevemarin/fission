@@ -14,6 +14,7 @@ from nodal import _rust
 from nodal.data import EndfLibrary
 from nodal.endf import Evaluation, Tabulated1D, fast
 from nodal.endf.channel import K_CONSTANT
+from nodal.endf.mlbw import mlbw
 from nodal.endf.reconstruct import reconstruct
 from nodal.endf.reich_moore import reich_moore
 from nodal.endf.resonances import LGroup, ResolvedRange, Resonance
@@ -57,6 +58,23 @@ def test_single_level_with_fission():
         _compare(py, rm(e), py.elastic + py.capture + py.fission)
 
 
+@pytest.mark.parametrize(
+    "res, spi, l",
+    [
+        (Resonance(292.0, 2.0, 0.6, 0.14, 0.0, 0.0), 2.5, 0),
+        (Resonance(4008.0, 1.5, 0.34, 0.09, 0.0, 0.0), 0.0, 1),  # p-wave: shift factor
+        (Resonance(-50.0, 0.5, 2.0, 0.03, 0.01, 0.0), 0.0, 0),  # bound level, fission
+    ],
+)
+def test_mlbw_single_level(res, spi, l):
+    group = LGroup(l=l, awri=90.0, apl=0.0, resonances=(res,))
+    rr = ResolvedRange(1e-5, 2e5, 2, 0, spi, 0.72, 0, 0, (group,))
+    model = fast.mlbw(rr)
+    for e in (1e-5, 0.0253, 290.0, 292.0, 4000.0, 4008.0, 1e5):
+        py = mlbw(rr, e)
+        _compare(py, model(e), py.elastic + py.capture + py.fission)
+
+
 # --------------------------------------------------- real ENDF/B-VIII.1 data
 def _evaluation(nuclide):
     lib = EndfLibrary()
@@ -75,6 +93,26 @@ def u235():
     return _evaluation("U235")
 
 
+@pytest.fixture(scope="module")
+def zr91():
+    return _evaluation("Zr91")
+
+
+@pytest.fixture(scope="module")
+def u234():
+    return _evaluation("U234")
+
+
+@pytest.mark.parametrize("name", ["zr91", "u234"])
+def test_mlbw_point_values(name, request):
+    rr = request.getfixturevalue(name).resonances[0].resolved
+    model = fast.mlbw(rr)
+    for i in range(150):
+        e = 1e-5 * (rr.eh / 1e-5) ** (i / 149)
+        py = mlbw(rr, e)
+        _compare(py, model(e), py.elastic + py.capture + py.fission)
+
+
 @pytest.mark.parametrize("name", ["u238", "u235"])
 def test_point_values(name, request):
     ev = request.getfixturevalue(name)
@@ -90,7 +128,15 @@ def test_point_values(name, request):
     assert [rm(e) for e in energies] == list(zip(el, ca, fi, strict=True))
 
 
-@pytest.mark.parametrize("name, lo, hi", [("u238", 6.3, 7.0), ("u235", 0.9, 1.4)])
+@pytest.mark.parametrize(
+    "name, lo, hi",
+    [
+        ("u238", 6.3, 7.0),
+        ("u235", 0.9, 1.4),
+        ("zr91", 200.0, 2000.0),
+        ("u234", 1.0, 30.0),
+    ],
+)
 def test_reconstruction_window(name, lo, hi, request):
     """Same seeds and same refinement decisions: the grids should be identical."""
     ev = request.getfixturevalue(name)

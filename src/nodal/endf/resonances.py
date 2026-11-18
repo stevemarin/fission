@@ -73,6 +73,7 @@ class LGroup:
     awri: float  # mass ratio of this isotope (target / neutron)
     apl: float  # l-dependent scattering radius (RM), 0 means "use AP"
     resonances: tuple[Resonance, ...]
+    lrx: int = 0  # BW only: 1 if a competitive (inelastic) width is present
 
 
 @dataclass(frozen=True)
@@ -212,7 +213,8 @@ def _read_bw_or_rm(c: Cursor, el, eh, lrf, naps, ap_table) -> ResolvedRange:
                 Resonance(e, j, gn, gg, gf, 0.0) for e, j, _gt, gn, gg, gf in rows
             )
             apl = 0.0
-        groups.append(LGroup(l=lst.l1, awri=lst.c1, apl=apl, resonances=res))
+        lrx = 0 if lrf == 3 else lst.l2
+        groups.append(LGroup(l=lst.l1, awri=lst.c1, apl=apl, resonances=res, lrx=lrx))
     rm = lrf == 3
     return ResolvedRange(
         el=el,

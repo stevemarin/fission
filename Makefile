@@ -19,7 +19,7 @@ PIN_THERMAL  := HinH2O OinUO2 UinUO2
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        data show scan rm clean
+        data tables clean-tables show scan rm clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -69,6 +69,12 @@ show:  ## summarize an evaluation's header and MF3 (NUC=U238)
 
 scan:  ## SLBW scan across a resonance (NUC=U238 E=6.674 WIDTHS=6)
 	$(PY) -m nodal.endf.slbw $(NUC) $(E) --widths $(WIDTHS)
+
+tables:  ## build (or load) cached pointwise tables for the pin-cell nuclides
+	$(PY) -m nodal.endf.cache $(PIN_NUCLIDES) --list
+
+clean-tables:  ## delete all cached pointwise tables
+	rm -rf endf-data/pointwise
 
 rm:  ## Reich-Moore vs SLBW across a resonance (NUC=U238 E=6.674 WIDTHS=6)
 	$(PY) -m nodal.endf.reich_moore $(NUC) $(E) --widths $(WIDTHS)
