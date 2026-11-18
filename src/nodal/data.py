@@ -60,7 +60,9 @@ def _neutron_file_stem(name: str) -> tuple[str, int, str]:
     """'U238' / 'U-238' / 'am242m' -> ('U', 238, 'm1') style key (symbol, A, state)."""
     m = _NUCLIDE.match(name.strip())
     if not m:
-        raise ValueError(f"cannot parse nuclide name {name!r} (try e.g. 'U238', 'H1', 'Am242m')")
+        raise ValueError(
+            f"cannot parse nuclide name {name!r} (try e.g. 'U238', 'H1', 'Am242m')"
+        )
     symbol, mass, state = m.groups()
     if state == "m":
         state = "m1"
@@ -89,14 +91,20 @@ def _download(url: str, dest: Path, sha1: str | None = None) -> None:
             done += len(chunk)
             pct = 100 * done // total if total else -1
             if total > 10 * CHUNK and pct != last_pct and pct % 5 == 0:
-                print(f"\r  {dest.name}: {done / 1e6:7.1f} / {total / 1e6:.1f} MB ({pct}%)",
-                      end="", file=sys.stderr, flush=True)
+                print(
+                    f"\r  {dest.name}: {done / 1e6:7.1f} / {total / 1e6:.1f} MB ({pct}%)",
+                    end="",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 last_pct = pct
     if total > 10 * CHUNK:
         print(file=sys.stderr)
     if sha1 is not None and digest.hexdigest() != sha1.lower():
         part.unlink()
-        raise OSError(f"SHA-1 mismatch for {url}: got {digest.hexdigest()}, expected {sha1}")
+        raise OSError(
+            f"SHA-1 mismatch for {url}: got {digest.hexdigest()}, expected {sha1}"
+        )
     part.replace(dest)
 
 
@@ -123,14 +131,21 @@ class EndfLibrary:
         """Path to the sublibrary tarball, downloading and verifying it if needed."""
         subs = self.metadata()["sublibraries"]
         if sublibrary not in subs:
-            raise KeyError(f"unknown sublibrary {sublibrary!r}; choose from {sorted(subs)}")
+            raise KeyError(
+                f"unknown sublibrary {sublibrary!r}; choose from {sorted(subs)}"
+            )
         info = subs[sublibrary]["files"]["ENDF-6"]
         path = self.root / "archives" / info["name"]
         if not path.exists():
-            print(f"Downloading {sublibrary} sublibrary ({info['size']}) from NNDC ...",
-                  file=sys.stderr)
-            _download(f"{BASE_URL}/{sublibrary}/{info['name']}", path,
-                      sha1=info["checksums"]["SHA1"])
+            print(
+                f"Downloading {sublibrary} sublibrary ({info['size']}) from NNDC ...",
+                file=sys.stderr,
+            )
+            _download(
+                f"{BASE_URL}/{sublibrary}/{info['name']}",
+                path,
+                sha1=info["checksums"]["SHA1"],
+            )
         return path
 
     def members(self, sublibrary: str) -> list[str]:
@@ -178,8 +193,11 @@ class EndfLibrary:
     def isotopes(self, element: str) -> list[str]:
         """Nuclides of an element with neutron evaluations, e.g. 'Zr' -> ['Zr90', ...]."""
         symbol = element.strip().capitalize()
-        return [f"{s}{a}{st[:1]}" for (s, a, st) in sorted(self._neutron_table())
-                if s == symbol]
+        return [
+            f"{s}{a}{st[:1]}"
+            for (s, a, st) in sorted(self._neutron_table())
+            if s == symbol
+        ]
 
     def neutrons(self, names: list[str]) -> list[Path]:
         """Incident-neutron evaluations for several nuclides (single tarball pass)."""
@@ -189,8 +207,10 @@ class EndfLibrary:
             key = _neutron_file_stem(name)
             if key not in table:
                 hint = self.isotopes(key[0])
-                raise KeyError(f"no ENDF/B-VIII.1 neutron evaluation for {name!r}"
-                               + (f"; available: {hint}" if hint else ""))
+                raise KeyError(
+                    f"no ENDF/B-VIII.1 neutron evaluation for {name!r}"
+                    + (f"; available: {hint}" if hint else "")
+                )
             members.append(table[key])
         return self.extract("neutrons", members)
 
@@ -200,27 +220,45 @@ class EndfLibrary:
 
     def thermal_materials(self) -> list[str]:
         """Thermal scattering law materials, e.g. 'HinH2O', 'OinUO2', 'crystalline-graphite'."""
-        return sorted(Path(m).name[4:-5] for m in self.members("thermal_scatt")
-                      if Path(m).name.startswith("tsl-") and m.endswith(".endf"))
+        return sorted(
+            Path(m).name[4:-5]
+            for m in self.members("thermal_scatt")
+            if Path(m).name.startswith("tsl-") and m.endswith(".endf")
+        )
 
     def thermal(self, name: str) -> Path:
         """Thermal scattering law (S(alpha, beta), ENDF MF7) evaluation, e.g. 'HinH2O'."""
         for member in self.members("thermal_scatt"):
             if Path(member).name.lower() == f"tsl-{name}.endf".lower():
                 return self.extract("thermal_scatt", [member])[0]
-        raise KeyError(f"no thermal scattering evaluation {name!r}; "
-                       f"see EndfLibrary().thermal_materials()")
+        raise KeyError(
+            f"no thermal scattering evaluation {name!r}; "
+            f"see EndfLibrary().thermal_materials()"
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(prog="python -m nodal.data",
-                                 description="Fetch ENDF/B-VIII.1 evaluations from the NNDC.")
-    ap.add_argument("nuclides", nargs="*", help="incident-neutron evaluations, e.g. U235 H1")
-    ap.add_argument("--thermal", nargs="*", default=[], metavar="MAT",
-                    help="thermal scattering laws, e.g. HinH2O")
+    ap = argparse.ArgumentParser(
+        prog="python -m nodal.data",
+        description="Fetch ENDF/B-VIII.1 evaluations from the NNDC.",
+    )
+    ap.add_argument(
+        "nuclides", nargs="*", help="incident-neutron evaluations, e.g. U235 H1"
+    )
+    ap.add_argument(
+        "--thermal",
+        nargs="*",
+        default=[],
+        metavar="MAT",
+        help="thermal scattering laws, e.g. HinH2O",
+    )
     ap.add_argument("--isotopes", metavar="ELEMENT", help="list nuclides of an element")
-    ap.add_argument("--list-thermal", action="store_true", help="list thermal materials")
-    ap.add_argument("--root", help="data directory (default: $ENDF_DATA_DIR or ./endf-data)")
+    ap.add_argument(
+        "--list-thermal", action="store_true", help="list thermal materials"
+    )
+    ap.add_argument(
+        "--root", help="data directory (default: $ENDF_DATA_DIR or ./endf-data)"
+    )
     args = ap.parse_args(argv)
 
     lib = EndfLibrary(args.root)

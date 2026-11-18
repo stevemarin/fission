@@ -28,7 +28,9 @@ from itertools import pairwise
 HISTOGRAM, LIN_LIN, LIN_LOG, LOG_LIN, LOG_LOG = 1, 2, 3, 4, 5
 
 
-def interpolate(law: int, x: float, x1: float, x2: float, y1: float, y2: float) -> float:
+def interpolate(
+    law: int, x: float, x1: float, x2: float, y1: float, y2: float
+) -> float:
     """Value at x between (x1, y1) and (x2, y2) using one ENDF interpolation law."""
     if law == HISTOGRAM or x2 == x1:
         return y1
@@ -52,8 +54,13 @@ class Tabulated1D:
     upper side is returned.
     """
 
-    def __init__(self, x: Sequence[float], y: Sequence[float],
-                 breaks: Sequence[int] | None = None, laws: Sequence[int] | None = None):
+    def __init__(
+        self,
+        x: Sequence[float],
+        y: Sequence[float],
+        breaks: Sequence[int] | None = None,
+        laws: Sequence[int] | None = None,
+    ):
         if len(x) != len(y) or not x:
             raise ValueError("x and y must be non-empty and the same length")
         if any(b < a for a, b in pairwise(x)):
@@ -83,5 +90,7 @@ class Tabulated1D:
         return len(self.x)
 
     def __repr__(self) -> str:
-        return (f"Tabulated1D({len(self.x)} points, x in [{self.x[0]:.4g}, {self.x[-1]:.4g}], "
-                f"laws {self.laws})")
+        return (
+            f"Tabulated1D({len(self.x)} points, x in [{self.x[0]:.4g}, {self.x[-1]:.4g}], "
+            f"laws {self.laws})"
+        )

@@ -8,6 +8,7 @@ skipped when the data has not been downloaded (python -m nodal.data ...).
 import math
 
 import pytest
+from helpers import endf_line
 
 from nodal.data import EndfLibrary
 from nodal.endf import Evaluation, Tabulated1D, mt_name
@@ -15,26 +16,28 @@ from nodal.endf.interpolation import HISTOGRAM, LIN_LIN, LIN_LOG, LOG_LIN, LOG_L
 from nodal.endf.records import Cursor, parse_float
 
 
-def endf_line(fields, mat=125, mf=3, mt=1):
-    """Build an 80-column ENDF line from up to six already-formatted fields."""
-    data = "".join(f"{f:>11}" for f in fields).ljust(66)
-    return f"{data}{mat:4d}{mf:2d}{mt:3d}{0:5d}"
-
-
 # ------------------------------------------------------------------ records
-@pytest.mark.parametrize("text, value", [
-    (" 9.223800+4", 92238.0), ("-1.234567-5", -1.234567e-5), (" 2.360058+2", 236.0058),
-    (" 1.0E+00   ", 1.0), ("1.0e-5", 1e-5), ("           ", 0.0), (" 0.5       ", 0.5),
-    ("-2.5+10", -2.5e10),
-])
+@pytest.mark.parametrize(
+    "text, value",
+    [
+        (" 9.223800+4", 92238.0),
+        ("-1.234567-5", -1.234567e-5),
+        (" 2.360058+2", 236.0058),
+        (" 1.0E+00   ", 1.0),
+        ("1.0e-5", 1e-5),
+        ("           ", 0.0),
+        (" 0.5       ", 0.5),
+        ("-2.5+10", -2.5e10),
+    ],
+)
 def test_parse_float(text, value):
     assert parse_float(text) == pytest.approx(value, rel=1e-15)
 
 
 def test_tab1_record_spanning_lines():
     lines = [
-        endf_line(["0.0", "2.5+6", "0", "0", "2", "7"]),     # CONT: NR=2, NP=7
-        endf_line(["3", "2", "7", "5"]),                     # NBT/INT pairs
+        endf_line(["0.0", "2.5+6", "0", "0", "2", "7"]),  # CONT: NR=2, NP=7
+        endf_line(["3", "2", "7", "5"]),  # NBT/INT pairs
         endf_line(["1.0-5", "1.0", "2.0-5", "2.0", "3.0-5", "3.0"]),
         endf_line(["4.0-5", "4.0", "5.0-5", "5.0", "6.0-5", "6.0"]),
         endf_line(["7.0-5", "7.0"]),
@@ -47,19 +50,25 @@ def test_tab1_record_spanning_lines():
 
 
 def test_list_record():
-    lines = [endf_line(["1.0", "2.0", "0", "0", "8", "0"]),
-             endf_line([f"{i}.0" for i in range(1, 7)]), endf_line(["7.0", "8.0"])]
+    lines = [
+        endf_line(["1.0", "2.0", "0", "0", "8", "0"]),
+        endf_line([f"{i}.0" for i in range(1, 7)]),
+        endf_line(["7.0", "8.0"]),
+    ]
     cont, values = Cursor(lines).list_record()
     assert cont.n1 == 8 and values == [float(i) for i in range(1, 9)]
 
 
 # ------------------------------------------------------------ interpolation
-@pytest.mark.parametrize("law, f", [
-    (LIN_LIN, lambda x: 3.0 + 2.0 * x),
-    (LIN_LOG, lambda x: 3.0 + 2.0 * math.log(x)),
-    (LOG_LIN, lambda x: 3.0 * math.exp(-0.7 * x)),
-    (LOG_LOG, lambda x: 3.0 * x**-0.5),           # 1/v: sigma ~ E^-1/2
-])
+@pytest.mark.parametrize(
+    "law, f",
+    [
+        (LIN_LIN, lambda x: 3.0 + 2.0 * x),
+        (LIN_LOG, lambda x: 3.0 + 2.0 * math.log(x)),
+        (LOG_LIN, lambda x: 3.0 * math.exp(-0.7 * x)),
+        (LOG_LOG, lambda x: 3.0 * x**-0.5),  # 1/v: sigma ~ E^-1/2
+    ],
+)
 def test_each_law_is_exact_for_its_function_family(law, f):
     t = Tabulated1D([1.0, 4.0], [f(1.0), f(4.0)], [2], [law])
     for x in (1.3, 2.0, 3.7):
@@ -67,9 +76,11 @@ def test_each_law_is_exact_for_its_function_family(law, f):
 
 
 def test_histogram_and_regions():
-    t = Tabulated1D([1, 2, 3, 4], [10, 20, 30, 40], breaks=[2, 4], laws=[HISTOGRAM, LIN_LIN])
-    assert t(1.5) == 10            # region 1: constant
-    assert t(2.5) == pytest.approx(25)   # region 2: linear
+    t = Tabulated1D(
+        [1, 2, 3, 4], [10, 20, 30, 40], breaks=[2, 4], laws=[HISTOGRAM, LIN_LIN]
+    )
+    assert t(1.5) == 10  # region 1: constant
+    assert t(2.5) == pytest.approx(25)  # region 2: linear
     assert t.law(0) == HISTOGRAM and t.law(1) == LIN_LIN and t.law(2) == LIN_LIN
 
 
@@ -134,7 +145,12 @@ THERMAL = 0.0253
 
 
 def test_header_identifies_material(h1, u238):
-    assert (h1.header.za, h1.header.lfi, h1.header.nsub, h1.header.nver) == (1001, 0, 10, 8)
+    assert (h1.header.za, h1.header.lfi, h1.header.nsub, h1.header.nver) == (
+        1001,
+        0,
+        10,
+        8,
+    )
     # AWR is the mass of the *atom* (proton + electron) over the neutron mass
     assert h1.header.awr == pytest.approx(1.007825 / 1.008665, rel=1e-5)
     assert u238.header.za == 92238 and u238.header.lfi == 1
@@ -166,7 +182,9 @@ def test_hydrogen_capture_follows_1_over_v(h1):
 def test_hydrogen_total_is_sum_of_partials(h1):
     total, elastic, capture = (h1.cross_section(mt) for mt in (1, 2, 102))
     for energy in total.table.x:
-        assert total(energy) == pytest.approx(elastic(energy) + capture(energy), rel=1e-6)
+        assert total(energy) == pytest.approx(
+            elastic(energy) + capture(energy), rel=1e-6
+        )
 
 
 def test_oxygen_thermal_scattering(o16):
@@ -179,5 +197,7 @@ def test_uranium_238_resonance_flag_and_background(u238):
     thermal capture comes entirely from the MF2 resonance parameters."""
     assert u238.header.lrp == 1
     assert u238.cross_section(102)(THERMAL) < 1e-3
-    assert 190e6 < u238.cross_section(18).qi < 210e6       # ~200 MeV per fission
-    assert u238.cross_section(1)(1e6) == pytest.approx(7.0, rel=3e-2)  # above resonances
+    assert 190e6 < u238.cross_section(18).qi < 210e6  # ~200 MeV per fission
+    assert u238.cross_section(1)(1e6) == pytest.approx(
+        7.0, rel=3e-2
+    )  # above resonances

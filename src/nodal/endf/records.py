@@ -29,9 +29,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import NamedTuple
 
-FIELD = 11       # characters per data field
-FIELDS = 6       # data fields per line
-DATA_COLS = 66   # columns holding data
+FIELD = 11  # characters per data field
+FIELDS = 6  # data fields per line
+DATA_COLS = 66  # columns holding data
 
 
 def parse_float(field: str) -> float:
@@ -58,7 +58,7 @@ def parse_int(field: str) -> int:
 def split_fields(line: str) -> list[str]:
     """The six 11-character data fields of a line (short lines are padded)."""
     data = line[:DATA_COLS].ljust(DATA_COLS)
-    return [data[i:i + FIELD] for i in range(0, DATA_COLS, FIELD)]
+    return [data[i : i + FIELD] for i in range(0, DATA_COLS, FIELD)]
 
 
 def control(line: str) -> tuple[int, int, int]:
@@ -68,6 +68,7 @@ def control(line: str) -> tuple[int, int, int]:
 
 class Cont(NamedTuple):
     """A CONT (or HEAD) record: two floats and four integers."""
+
     c1: float
     c2: float
     l1: int
@@ -78,8 +79,9 @@ class Cont(NamedTuple):
 
 class Tab1Data(NamedTuple):
     """Raw content of a TAB1 record: interpolation regions and (x, y) points."""
-    breaks: list[int]   # NBT: 1-based index of the last point of each region
-    laws: list[int]     # INT: interpolation law used in each region
+
+    breaks: list[int]  # NBT: 1-based index of the last point of each region
+    laws: list[int]  # INT: interpolation law used in each region
     x: list[float]
     y: list[float]
 
@@ -103,8 +105,14 @@ class Cursor:
 
     def cont(self) -> Cont:
         f = split_fields(self._line())
-        return Cont(parse_float(f[0]), parse_float(f[1]),
-                    parse_int(f[2]), parse_int(f[3]), parse_int(f[4]), parse_int(f[5]))
+        return Cont(
+            parse_float(f[0]),
+            parse_float(f[1]),
+            parse_int(f[2]),
+            parse_int(f[3]),
+            parse_int(f[4]),
+            parse_int(f[5]),
+        )
 
     head = cont  # a HEAD record has the same layout as a CONT record
 

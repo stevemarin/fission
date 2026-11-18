@@ -23,9 +23,16 @@ from pathlib import Path
 from .interpolation import Tabulated1D
 from .reactions import mt_name
 from .records import Cursor, control
+from .resonances import Isotope, read_mf2
 
-SUBLIBRARIES = {0: "photonuclear", 10: "incident neutron", 12: "thermal neutron scattering",
-                3: "photo-atomic", 4: "radioactive decay", 11: "neutron fission yields"}
+SUBLIBRARIES = {
+    0: "photonuclear",
+    10: "incident neutron",
+    12: "thermal neutron scattering",
+    3: "photo-atomic",
+    4: "radioactive decay",
+    11: "neutron fission yields",
+}
 LRP_MEANING = {
     -1: "no MF2",
     0: "no resonance parameters (MF2 holds only a scattering radius)",
@@ -37,25 +44,26 @@ LRP_MEANING = {
 @dataclass(frozen=True)
 class Header:
     """The MF1/MT451 descriptive header."""
-    za: int          # 1000 * Z + A
-    awr: float       # mass in units of the neutron mass
-    lrp: int         # resonance-parameter flag (see LRP_MEANING)
-    lfi: int         # 1 if the material is fissionable
-    nlib: int        # library identifier (0 = ENDF/B)
-    nmod: int        # modification number
-    elis: float      # excitation energy of the target state (eV)
-    sta: float       # 0 stable, 1 radioactive target
-    lis: int         # excited-state number of the target
-    liso: int        # isomeric-state number of the target
-    nfor: int        # format version (6 = ENDF-6)
-    awi: float       # projectile mass in neutron masses (1 for neutrons)
-    emax: float      # upper energy limit of the evaluation (eV)
-    lrel: int        # release number
-    nsub: int        # sublibrary (10 incident neutron, 12 thermal scattering, ...)
-    nver: int        # library version (8 for ENDF/B-VIII)
-    temp: float      # target temperature (K); 0 for incident-neutron data
-    ldrv: int        # derived-evaluation flag
-    description: tuple[str, ...]                  # the free-text lines
+
+    za: int  # 1000 * Z + A
+    awr: float  # mass in units of the neutron mass
+    lrp: int  # resonance-parameter flag (see LRP_MEANING)
+    lfi: int  # 1 if the material is fissionable
+    nlib: int  # library identifier (0 = ENDF/B)
+    nmod: int  # modification number
+    elis: float  # excitation energy of the target state (eV)
+    sta: float  # 0 stable, 1 radioactive target
+    lis: int  # excited-state number of the target
+    liso: int  # isomeric-state number of the target
+    nfor: int  # format version (6 = ENDF-6)
+    awi: float  # projectile mass in neutron masses (1 for neutrons)
+    emax: float  # upper energy limit of the evaluation (eV)
+    lrel: int  # release number
+    nsub: int  # sublibrary (10 incident neutron, 12 thermal scattering, ...)
+    nver: int  # library version (8 for ENDF/B-VIII)
+    temp: float  # target temperature (K); 0 for incident-neutron data
+    ldrv: int  # derived-evaluation flag
+    description: tuple[str, ...]  # the free-text lines
     directory: tuple[tuple[int, int, int, int], ...]  # (MF, MT, lines, mod) per section
 
     @property
@@ -91,10 +99,11 @@ class Header:
 @dataclass(frozen=True)
 class CrossSection:
     """An MF3 section: sigma(E) in barns, E in eV."""
+
     mt: int
-    qm: float        # mass-difference Q value (eV)
-    qi: float        # reaction Q value for the lowest state reached (eV)
-    lr: int          # complex breakup flag
+    qm: float  # mass-difference Q value (eV)
+    qi: float  # reaction Q value for the lowest state reached (eV)
+    lr: int  # complex breakup flag
     table: Tabulated1D
 
     @property
@@ -137,7 +146,9 @@ class Evaluation:
                 sections.setdefault((mf, mt), []).append(line)
                 mats.add(mat)
         if len(mats) != 1:
-            raise ValueError(f"expected exactly one material, found MAT numbers {sorted(mats)}")
+            raise ValueError(
+                f"expected exactly one material, found MAT numbers {sorted(mats)}"
+            )
         return cls(sections, mats.pop())
 
     def cursor(self, mf: int, mt: int) -> Cursor:
@@ -150,13 +161,31 @@ class Evaluation:
     def header(self) -> Header:
         c = self.cursor(1, 451)
         h1, h2, h3, h4 = c.head(), c.cont(), c.cont(), c.cont()
-        description = tuple(c.text() for _ in range(h4.n1))         # NWD lines
-        directory = tuple((d.l1, d.l2, d.n1, d.n2) for d in (c.cont() for _ in range(h4.n2)))
+        description = tuple(c.text() for _ in range(h4.n1))  # NWD lines
+        directory = tuple(
+            (d.l1, d.l2, d.n1, d.n2) for d in (c.cont() for _ in range(h4.n2))
+        )
         return Header(
-            za=round(h1.c1), awr=h1.c2, lrp=h1.l1, lfi=h1.l2, nlib=h1.n1, nmod=h1.n2,
-            elis=h2.c1, sta=h2.c2, lis=h2.l1, liso=h2.l2, nfor=h2.n2,
-            awi=h3.c1, emax=h3.c2, lrel=h3.l1, nsub=h3.n1, nver=h3.n2,
-            temp=h4.c1, ldrv=h4.l1, description=description, directory=directory,
+            za=round(h1.c1),
+            awr=h1.c2,
+            lrp=h1.l1,
+            lfi=h1.l2,
+            nlib=h1.n1,
+            nmod=h1.n2,
+            elis=h2.c1,
+            sta=h2.c2,
+            lis=h2.l1,
+            liso=h2.l2,
+            nfor=h2.n2,
+            awi=h3.c1,
+            emax=h3.c2,
+            lrel=h3.l1,
+            nsub=h3.n1,
+            nver=h3.n2,
+            temp=h4.c1,
+            ldrv=h4.l1,
+            description=description,
+            directory=directory,
         )
 
     # ---------------------------------------------------------------------- MF3
@@ -169,9 +198,20 @@ class Evaluation:
         c = self.cursor(3, mt)
         c.head()  # ZA, AWR (repeated from the header)
         cont, tab = c.tab1()
-        return CrossSection(mt=mt, qm=cont.c1, qi=cont.c2, lr=cont.l2,
-                            table=Tabulated1D(tab.x, tab.y, tab.breaks, tab.laws))
+        return CrossSection(
+            mt=mt,
+            qm=cont.c1,
+            qi=cont.c2,
+            lr=cont.l2,
+            table=Tabulated1D(tab.x, tab.y, tab.breaks, tab.laws),
+        )
 
     def cross_sections(self) -> Iterator[CrossSection]:
         for mt in self.reactions:
             yield self.cross_section(mt)
+
+    # ---------------------------------------------------------------------- MF2
+    @property
+    def resonances(self) -> list[Isotope]:
+        """MF2/MT151 resonance parameters, one entry per isotope."""
+        return read_mf2(self.cursor(2, 151))

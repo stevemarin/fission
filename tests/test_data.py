@@ -21,7 +21,10 @@ FILES = {
         "n-095_Am_242m1.endf": b"am242m\n",
         "README.md": b"readme\n",
     },
-    "thermal_scatt": {"tsl-HinH2O.endf": b"h in water\n", "tsl-HinH2O.leapr": b"input\n"},
+    "thermal_scatt": {
+        "tsl-HinH2O.endf": b"h in water\n",
+        "tsl-HinH2O.leapr": b"input\n",
+    },
 }
 
 
@@ -39,17 +42,29 @@ def lib(tmp_path: Path) -> EndfLibrary:
         archive = f"{sub}-version.VIII.1.tar.gz"
         (tmp_path / "archives").mkdir(exist_ok=True)
         (tmp_path / "archives" / archive).write_bytes(buf.getvalue())
-        subs[sub] = {"files": {"ENDF-6": {
-            "name": archive, "size": "1 KB",
-            "checksums": {"SHA1": hashlib.sha1(buf.getvalue()).hexdigest()}}}}
+        subs[sub] = {
+            "files": {
+                "ENDF-6": {
+                    "name": archive,
+                    "size": "1 KB",
+                    "checksums": {"SHA1": hashlib.sha1(buf.getvalue()).hexdigest()},
+                }
+            }
+        }
     (tmp_path / "metadata.json").write_text(json.dumps({"sublibraries": subs}))
     return EndfLibrary(tmp_path)
 
 
-@pytest.mark.parametrize("name, key", [
-    ("U238", ("U", 238, "")), ("u-238", ("U", 238, "")), ("H1", ("H", 1, "")),
-    ("Am242m", ("Am", 242, "m1")), ("am242m1", ("Am", 242, "m1")),
-])
+@pytest.mark.parametrize(
+    "name, key",
+    [
+        ("U238", ("U", 238, "")),
+        ("u-238", ("U", 238, "")),
+        ("H1", ("H", 1, "")),
+        ("Am242m", ("Am", 242, "m1")),
+        ("am242m1", ("Am", 242, "m1")),
+    ],
+)
 def test_name_parsing(name, key):
     assert _neutron_file_stem(name) == key
 
@@ -89,9 +104,13 @@ def test_download_verifies_sha1(tmp_path, monkeypatch) -> None:
     class FakeResponse(io.BytesIO):
         headers: ClassVar[dict[str, str]] = {"Content-Length": str(len(payload))}
 
-    monkeypatch.setattr(data.urllib.request, "urlopen", lambda req: FakeResponse(payload))
+    monkeypatch.setattr(
+        data.urllib.request, "urlopen", lambda req: FakeResponse(payload)
+    )
     good = tmp_path / "good.bin"
-    data._download("https://example.invalid/f", good, sha1=hashlib.sha1(payload).hexdigest())
+    data._download(
+        "https://example.invalid/f", good, sha1=hashlib.sha1(payload).hexdigest()
+    )
     assert good.read_bytes() == payload
 
     bad = tmp_path / "bad.bin"
