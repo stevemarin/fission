@@ -72,3 +72,11 @@ def pointwise_table(
     min_rel_width: float = ...,
 ) -> tuple[Array, list[Array]]: ...
 def fsum(values: Sequence[float]) -> float: ...
+def group_hat_integrals(
+    x: Sequence[float],
+    columns: Sequence[Sequence[float]],
+    weight: Sequence[float],
+    boundaries: Sequence[float],
+    z: Sequence[float],
+    max_ratio: float,
+) -> tuple[list[int], list[int], list[list[float]]]: ...

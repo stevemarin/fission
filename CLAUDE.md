@@ -30,6 +30,7 @@ make fix          # ruff --fix + format
 make data         # download pin-cell evaluations into endf-data/
 make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
+make groups       # XMAS-172 multigroup libraries (endf-data/groups/); make library NUC=U238 T=293.6
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
 make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make secondary   # quick CLIs
@@ -42,9 +43,11 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 ## Layout
 
-- `src/fission/processing/`: stages that take 0 K tables as input
-  (`doppler.py`; later group averaging). Kept outside `endf/` so edits do
-  not invalidate the table cache.
+- `src/fission/processing/`: stages that take 0 K tables as input:
+  `doppler.py` (+ `cache.py`), group averaging `groupr.py` with `groups.py`
+  (XMAS-172 from NJOY groupr.f90), `weights.py` (NJOY iwt=4, slope-matched
+  breaks), `library.py` (GroupLibrary cache + CLI). Kept outside `endf/` so
+  edits do not invalidate the 0 K table cache.
 - `src/fission/data.py`: ENDF/B-VIII.1 downloader (NNDC tarballs, SHA-1 checked)
   → `endf-data/` (gitignored).
 - `src/fission/endf/`: ENDF-6 reader (`records`, `interpolation`,
@@ -63,7 +66,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `11-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `12-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -84,6 +87,12 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   chosen by panel width; seeds at ±1–3 Γ_D around sparse 0 K points (the
   midpoint test alone misses rounded corners whose shifts cancel); refined
   then thinned; observed error ≤ ~1.5 tol.
+- Group averaging: group 0 = highest energy; S[l, g, g'] = transfer g -> g'
+  (LAB P_l). All constants are Int_g sigma w K with K tabulated on a coarse
+  kernel grid; only the hat integrals A[g, j] see the fine grid (Rust
+  `groupr.rs`). Elastic uses target-at-rest kinematics (no upscatter) until
+  A4; P0 rows lose flux below 1e-5 eV in the lowest groups (H: 1%).
+  Libraries are infinitely dilute (self-shielding is C1).
 - Rust refinement is threaded with std only (`adaptive_grid_parallel`,
   identical to serial). `pointwise(use_rust=True)` runs the whole full-range
   refinement in Rust (`rust/src/pointwise.rs`, exact `fsum.rs` port of
@@ -102,14 +111,15 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 ## Roadmap
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
-A1 Doppler broadening, A2 secondary-neutron data; theory docs ch. 0–11. Data and transport are independent tracks that meet at
+A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries;
+theory docs ch. 0–12. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
   - A1 Doppler broadening (done)
   - A2 rest of the reader: ν̄, χ, MF4/MF5/MF6 (done)
-  - **A3 group averaging (next)** (σ_g, νσ_f, χ, P0/P1 matrices)
-  - A4 thermal scattering (free gas, then S(α,β))
+  - A3 group averaging: σ_g, νσ_f, χ, P0–P3 matrices (done)
+  - **A4 thermal scattering (next)**: free gas, then S(α,β)
   - A5 infinite-medium spectrum + k∞ of a homogenized pin cell
 - **B: transport**
   - B1 pin-cell geometry + cyclic ray tracing

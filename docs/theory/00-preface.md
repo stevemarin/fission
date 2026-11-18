@@ -31,7 +31,7 @@ $$
 The tables are first built at **0 K** (no thermal motion of the target
 nuclei), then Doppler-broadened to the temperatures of a reactor. The
 unresolved resonance range, self-shielding and thermal scattering come next;
-chapter 10 previews them.
+chapter 11 previews them.
 
 ## How to read these notes {.unnumbered}
 
@@ -44,6 +44,7 @@ chapter 10 previews them.
 * Chapter 7 turns formulas into tables; chapter 8 heats them up.
 * Chapter 9 turns to what reactions emit: neutrons per fission, spectra and
   angular distributions.
+* Chapter 10 condenses all of it into multigroup constants for transport.
 * Sections marked **(derivation)** can be skipped on a first reading; the
   results they derive are stated before them.
 

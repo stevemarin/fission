@@ -124,7 +124,8 @@ class PointwiseTable:
                 continue
             slope = (y[i + 1] - y[i]) / (e[i + 1] - e[i])
             ya = y[i] + slope * (a - e[i])
-            total += (ya - slope * a) * math.log(b / a) + slope * (b - a)
+            # log1p: b/a can be 1 + 1e-7 (shaded jumps), where log(b/a) loses ~9 digits
+            total += (ya - slope * a) * math.log1p((b - a) / a) + slope * (b - a)
         return total
 
 

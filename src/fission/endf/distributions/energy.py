@@ -52,6 +52,8 @@ class Panel:
         x = self.x
         if not x[0] <= e_out <= x[-1]:
             return 0.0
+        if self.law == HISTOGRAM and e_out == x[-1]:
+            return self.y[-1]  # y_i holds on [x_i, x_i+1); the last y ends the table
         i = min(bisect_right(x, e_out) - 1, len(x) - 2)
         if self.law == HISTOGRAM or x[i + 1] == x[i]:
             return self.y[i]

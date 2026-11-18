@@ -42,6 +42,9 @@ from fission.processing.doppler import (
     broadened_at,
     doppler_width,
 )
+from fission.processing.groups import XMAS_172
+from fission.processing.library import cached_groups
+from fission.processing.weights import ThermalSlowingDownFission
 
 OUT = Path(__file__).parent
 PREVIEW = (
@@ -588,6 +591,101 @@ def fig_continuum():
     save(fig, "continuum")
 
 
+# ---------------------------------------------------------------- chapter 10
+def fig_weight_function():
+    w = ThermalSlowingDownFission.at(293.6)
+    e = np.array(logspace(1e-5, 2e7, 2000))
+    fig, ax = plt.subplots(figsize=(6.8, 3.8))
+    ax.loglog(e, [x * w(x) for x in e], color=C[0])
+    for x, label in ((w.eb, "$E_b = 2kT$"), (w.ec, "$E_c = 1.5\\,T_f$")):
+        ax.axvline(x, color="0.6", ls="--", lw=0.8)
+        ax.text(x * 1.3, 2e-4, label, fontsize=9)
+    ax.set(
+        xlabel="E (eV)",
+        ylabel=r"$E\,w(E)$ (flux per unit lethargy)",
+        ylim=(1e-5, 3),
+        title="Weighting spectrum: Maxwellian - 1/E - fission",
+    )
+    save(fig, "weight_function")
+
+
+def fig_group_capture():
+    table = cached_doppler("U238", 293.6)
+    gl = cached_groups("U238", 293.6)
+    e, s = _window(table, 102, 1.0, 1e3)
+    fig, ax = plt.subplots(figsize=(7.0, 4.0))
+    ax.loglog(e, s, color="0.65", lw=0.6, label="pointwise (293.6 K)", rasterized=True)
+    edges = np.array(XMAS_172.boundaries[::-1])
+    values = gl.sigma[102][::-1]
+    k = (edges[:-1] >= 1.0) & (edges[1:] <= 1e3)
+    ax.stairs(
+        values[k],
+        edges[np.r_[k, False] | np.r_[False, k]],
+        color=C[1],
+        lw=1.4,
+        label="XMAS-172 group average",
+    )
+    ax.set(
+        xlabel="E (eV)",
+        ylabel="capture (b)",
+        xlim=(1, 1e3),
+        ylim=(1e-1, 4e4),
+        title="U-238 capture: pointwise and infinitely dilute group values",
+    )
+    ax.legend(loc="lower left")
+    save(fig, "group_capture")
+
+
+def fig_scatter_matrices():
+    fig, axes = plt.subplots(1, 2, figsize=(8.6, 4.0))
+    for ax, nuc in zip(axes, ("H1", "U238"), strict=True):
+        gl = cached_groups(nuc, 293.6)
+        m = gl.scatter_elastic[0]
+        im = ax.imshow(
+            np.where(m > 0, m, np.nan),
+            norm=matplotlib.colors.LogNorm(vmin=1e-6, vmax=m.max()),
+            cmap="viridis",
+            interpolation="nearest",
+        )
+        ax.set(
+            xlabel="to group g'",
+            ylabel="from group g",
+            title=f"{nuc[0]}-{nuc[1:]} elastic $P_0$ (b)",
+        )
+        fig.colorbar(im, ax=ax, shrink=0.8)
+    save(fig, "scatter_matrices")
+
+
+def fig_chi_groups():
+    gl = cached_groups("U235", 293.6)
+    chi = energy_distribution(evaluation("U235"), 18)
+    du = np.array([XMAS_172.lethargy_width(g) for g in range(XMAS_172.size)])
+    edges = np.array(XMAS_172.boundaries[::-1])
+    fig, ax = plt.subplots(figsize=(6.8, 3.8))
+    e = np.array(logspace(1e3, 2e7, 400))
+    ax.semilogx(
+        e / 1e6,
+        [x * chi(0.0253, x) for x in e],
+        color="0.6",
+        label="pointwise $E\\,\\chi(E)$",
+    )
+    ax.stairs(
+        (gl.chi / du)[::-1],
+        edges / 1e6,
+        color=C[0],
+        lw=1.4,
+        label=r"$\chi_g / \Delta u_g$",
+    )
+    ax.set(
+        xlabel="E (MeV)",
+        ylabel="per unit lethargy",
+        xlim=(1e-3, 20),
+        title="U-235 fission spectrum in XMAS-172 groups",
+    )
+    ax.legend()
+    save(fig, "chi_groups")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -607,5 +705,9 @@ if __name__ == "__main__":
         fig_fission_spectrum,
         fig_elastic_angular,
         fig_continuum,
+        fig_weight_function,
+        fig_group_capture,
+        fig_scatter_matrices,
+        fig_chi_groups,
     ):
         make()

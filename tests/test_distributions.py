@@ -114,6 +114,8 @@ def test_panel_integral_and_mean_are_exact():
     assert p.mean() == pytest.approx((1 + 2 + 4) / 3)  # centroid of a triangle
     h = Panel((0.0, 1.0, 3.0), (0.5, 0.25, 0.0), law=1)
     assert h.integral() == pytest.approx(1.0)
+    # histogram: y_i holds on [x_i, x_i+1); at the last point the table ends
+    assert (h(0.99), h(1.0), h(2.99), h(3.0)) == (0.5, 0.25, 0.25, 0.0)
 
 
 # --------------------------------------------------------------- kinematics

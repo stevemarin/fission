@@ -7,6 +7,7 @@ pub mod channel;
 pub mod complex;
 pub mod doppler;
 pub mod fsum;
+pub mod groupr;
 pub mod mlbw;
 pub mod pointwise;
 pub mod reconstruct;
@@ -249,6 +250,42 @@ fn pointwise_table<'py>(
     Ok((grid.into_pyarray(py), columns_to_arrays(py, n, &rows)))
 }
 
+/// Group-averaging hat integrals (port of `processing.groupr.hat_integrals`).
+/// Returns (groups, hat indices, values per column) of the nonzero entries.
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn group_hat_integrals(
+    py: Python<'_>,
+    x: Vec<f64>,
+    columns: Vec<Vec<f64>>,
+    weight: Vec<f64>,
+    boundaries: Vec<f64>,
+    z: Vec<f64>,
+    max_ratio: f64,
+) -> PyResult<(Vec<usize>, Vec<usize>, Vec<Vec<f64>>)> {
+    let w = groupr::Weight::from_params(&weight)
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("bad weight parameters"))?;
+    if x.len() < 2
+        || z.len() < 2
+        || boundaries.len() < 2
+        || columns.iter().any(|c| c.len() != x.len())
+    {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "bad grids or columns",
+        ));
+    }
+    let acc = py.detach(|| groupr::hat_integrals(&x, &columns, w, &boundaries, &z, max_ratio));
+    let mut gs = Vec::with_capacity(acc.len());
+    let mut js = Vec::with_capacity(acc.len());
+    let mut vs = Vec::with_capacity(acc.len());
+    for ((g, j), v) in acc {
+        gs.push(g);
+        js.push(j);
+        vs.push(v);
+    }
+    Ok((gs, js, vs))
+}
+
 /// Correctly rounded sum (port of `math.fsum`, for parity tests).
 #[pyfunction(name = "fsum")]
 fn py_fsum(values: Vec<f64>) -> f64 {
@@ -374,6 +411,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(k_constant, m)?)?;
     m.add_function(wrap_pyfunction!(pointwise_table, m)?)?;
     m.add_function(wrap_pyfunction!(py_fsum, m)?)?;
+    m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_thin, m)?)?;

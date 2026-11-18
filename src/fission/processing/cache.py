@@ -42,9 +42,13 @@ COLD: dict[str, Any] = {
 
 @functools.cache
 def code_fingerprint() -> str:
-    """Hash of fission.processing sources and of the code behind the 0 K tables."""
+    """Hash of fission.processing, fission.endf.distributions and the 0 K table code."""
     digest = hashlib.sha256(endf_cache.code_fingerprint().encode())
-    for source in sorted(Path(__file__).parent.glob("*.py")):
+    distributions = Path(endf_cache.__file__).parent / "distributions"
+    for source in [
+        *sorted(Path(__file__).parent.glob("*.py")),
+        *sorted(distributions.glob("*.py")),
+    ]:
         digest.update(source.name.encode())
         digest.update(source.read_bytes())
     return digest.hexdigest()
