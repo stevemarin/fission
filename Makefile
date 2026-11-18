@@ -11,7 +11,7 @@ NUC     ?= U238
 E       ?= 6.674
 WIDTHS  ?= 6
 ARGS    ?=
-SRC     := src tests
+SRC     := src tests docs/figures
 
 # nuclides and thermal scattering laws needed for the PWR pin cell
 PIN_NUCLIDES := H1 O16 U234 U235 U238 Zr90 Zr91 Zr92 Zr94 Zr96 B10 B11
@@ -19,7 +19,7 @@ PIN_THERMAL  := HinH2O OinUO2 UinUO2
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        data tables clean-tables show scan rm clean
+        data tables clean-tables show scan rm docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -78,6 +78,20 @@ clean-tables:  ## delete all cached pointwise tables
 
 rm:  ## Reich-Moore vs SLBW across a resonance (NUC=U238 E=6.674 WIDTHS=6)
 	$(PY) -m nodal.endf.reich_moore $(NUC) $(E) --widths $(WIDTHS)
+
+# ---------------------------------------------------------------- documentation
+DOCS_MATH ?= --mathml
+DOCS_SRC  := docs/theory/metadata.yaml $(sort $(wildcard docs/theory/[0-9]*.md))
+
+docs:  ## build docs/build/theory.html (single file, offline; DOCS_MATH=--mathjax for MathJax)
+	@mkdir -p docs/build
+	pandoc $(DOCS_SRC) --standalone --embed-resources $(DOCS_MATH) --toc --toc-depth=2 \
+		--number-sections --resource-path=docs/theory --css=docs/theory/style.css \
+		-o docs/build/theory.html
+	@echo "wrote docs/build/theory.html"
+
+figures:  ## regenerate documentation figures from ENDF data
+	$(PY) docs/figures/make_figures.py
 
 # ---------------------------------------------------------------- housekeeping
 clean:  ## remove caches and Rust build output (keeps endf-data/)

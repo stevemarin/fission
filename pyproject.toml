@@ -29,6 +29,7 @@ cache-keys = [
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.11.2",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "ruff>=0.17.5",

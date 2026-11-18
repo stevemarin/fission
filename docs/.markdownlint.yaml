@@ -1,0 +1,5 @@
+# Chapters link to anchors in 09-references.md; they resolve in the combined
+# HTML (make docs), not file by file.
+MD051: false
+# Long lines are fine in prose and tables.
+MD013: false
