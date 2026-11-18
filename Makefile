@@ -1,0 +1,70 @@
+# Common commands for the fission project. Run `make` or `make help` for the list.
+#
+# Variables you can override on the command line:
+#   make show NUC=U235
+#   make scan NUC=U238 E=20.87 WIDTHS=4
+#   make test ARGS="-k slbw -x"
+
+UV      ?= uv
+PY      := $(UV) run python
+NUC     ?= U238
+E       ?= 6.674
+WIDTHS  ?= 6
+ARGS    ?=
+SRC     := src tests
+
+# nuclides and thermal scattering laws needed for the PWR pin cell
+PIN_NUCLIDES := H1 O16 U234 U235 U238 Zr90 Zr91 Zr92 Zr94 Zr96 B10 B11
+PIN_THERMAL  := HinH2O OinUO2 UinUO2
+
+.DEFAULT_GOAL := help
+.PHONY: help sync test test-fast lint format format-check typecheck check fix \
+        data show scan clean
+
+help:  ## list targets
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
+		awk -F':.*## ' '{printf "  \033[36m%-13s\033[0m %s\n", $$1, $$2}'
+
+# ---------------------------------------------------------------- environment
+sync:  ## install/update the project environment from uv.lock
+	$(UV) sync
+
+# ---------------------------------------------------------------- quality
+test:  ## run all tests (ARGS="..." passes extra pytest options)
+	$(UV) run pytest -q $(ARGS)
+
+test-fast:  ## run tests, stop at first failure
+	$(UV) run pytest -q -x $(ARGS)
+
+lint:  ## ruff lint
+	$(UV) run ruff check $(SRC)
+
+format:  ## ruff format (rewrites files)
+	$(UV) run ruff format $(SRC)
+
+format-check:  ## check formatting without changing files
+	$(UV) run ruff format --check $(SRC)
+
+typecheck:  ## mypy
+	$(UV) run mypy $(SRC)
+
+fix:  ## auto-fix lint issues, then format
+	$(UV) run ruff check --fix $(SRC)
+	$(UV) run ruff format $(SRC)
+
+check: lint format-check typecheck test  ## everything CI would run
+
+# ---------------------------------------------------------------- data
+data:  ## fetch the ENDF/B-VIII.1 evaluations needed for the pin cell
+	$(PY) -m nodal.data $(PIN_NUCLIDES) --thermal $(PIN_THERMAL)
+
+show:  ## summarize an evaluation's header and MF3 (NUC=U238)
+	$(PY) -m nodal.endf $(NUC)
+
+scan:  ## SLBW scan across a resonance (NUC=U238 E=6.674 WIDTHS=6)
+	$(PY) -m nodal.endf.slbw $(NUC) $(E) --widths $(WIDTHS)
+
+# ---------------------------------------------------------------- housekeeping
+clean:  ## remove caches (keeps endf-data/)
+	rm -rf .pytest_cache .mypy_cache .ruff_cache
+	find . -name __pycache__ -type d -prune -not -path './.venv/*' -exec rm -rf {} +
