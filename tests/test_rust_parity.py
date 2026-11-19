@@ -165,3 +165,46 @@ def test_u238_resonance_integral(u238):
     ri = p.integral_over_e("capture", 0.5, 2e4)
     assert 268.0 < ri < 277.0
     assert math.isfinite(p.integral_over_e("elastic", 0.5, 2e4))
+
+
+# ---------------------------------------------------------------- slowing-down march
+def _march_problem(regions):
+    from fission.pincell.shielding import march  # noqa: F401  (the reference)
+
+    e = np.geomspace(2e3 * math.exp(0.8), 1.0, 20000)
+    u = np.log(e[0] / e)
+    start = int(np.searchsorted(u, 0.8)) + 1
+    res = 50.0 / (1 + ((e - 100.0) / 0.25) ** 2) + 30.0 / (1 + ((e - 36.0) / 0.1) ** 2)
+    moderator = np.full_like(e, 1.0)
+    absorber = 0.1 + 0.3 * res / 50.0  # some resonance scattering
+    total = moderator + absorber + res
+    scatter = [moderator, absorber]
+    alphas = [0.5, (237.0 / 239.0) ** 2]
+    rng = np.random.default_rng(3)
+    p = 0.2 + 0.6 * total / (total + 1.0)
+    if regions == 1:
+        return {"energies": e, "total": total, "scatter": scatter, "alphas": alphas,
+                    "escape": 1 - p, "history": np.ones(start), "start": start}  # fmt: skip
+    # rings: a random row-stochastic-like collision matrix with escapes
+    base = rng.uniform(0.1, 1.0, (regions, regions))
+    collide = (base / base.sum(axis=1, keepdims=True))[None] * p[:, None, None]
+    escape = 1.0 - collide.sum(axis=2)
+    return {"energies": e, "total": total, "scatter": scatter, "alphas": alphas,
+                "escape": escape, "history": np.ones((start, regions)), "start": start,
+                "collide": collide, "volumes": np.array([1.0, 1.3, 0.7][:regions])}  # fmt: skip
+
+
+@pytest.mark.parametrize("regions", [1, 3])
+def test_slowing_down_march(regions):
+    from fission.pincell.shielding import march
+
+    kw = _march_problem(regions)
+    outside = np.full(len(kw["energies"]), 1e-3)
+    lv_py, lv_rs = np.zeros(len(outside)), np.zeros(len(outside))
+    py = march(**kw, share=0.05, outside_absorption=outside, levels=lv_py)
+    rs = march(
+        **kw, share=0.05, outside_absorption=outside, levels=lv_rs, use_rust=True
+    )
+    np.testing.assert_allclose(rs, py, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(lv_rs, lv_py, rtol=1e-12, atol=0)
+    assert np.min(py) < 0.5  # the resonances really dip the flux

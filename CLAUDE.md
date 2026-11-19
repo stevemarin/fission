@@ -32,6 +32,9 @@ make data         # download pin-cell evaluations into endf-data/
 make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|nr; MODEL=vera-p1)
+make pin STATES="1A 1B" PIN_SHIELD=sd PIN_ARGS="--rings --sph"  # heterogeneous VERA pin, MOC + shielded ENDF libraries
+make openmc-library  # NJOY -> OpenMC HDF5 of our ENDF files (endf-data/openmc/, ~10 min; check only)
+make openmc-pin STATES=1A PIN_ARGS="--rings --sph"  # OpenMC CE reference of the pin vs this code (~15 min/state)
 make model MODEL=vera-p1 STATE=1A  # check a model file, print number densities
 make tracks MODEL=vera-p1 AZIM=64 SPACING=0.01  # cyclic tracks + ray tracing, area check
 make moc CORE=c5g7 MOC_ARGS="--azim 128"  # MOC+CMFD eigenvalue + pin powers vs C5G7 (~1 min)
@@ -88,6 +91,22 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   `[model] multigroup =` library file), pins without rings (`radii = []`),
   `fill`/`size` lattices, `[core] boundary` per side. Layout read from the
   spec's Figure 3 by pixel classification; XS parsed from its text.
+- `src/fission/pincell/shielding.py` (C1): Dancoff C by black-pin MOC
+  fixed source (ratio to the same-tracking unshadowed current),
+  equivalence sigma_0 (Bell & Glasstone 2.122, 8.87-8.88; sigma_p = 4 pi a^2
+  from MF2), exact escape probability P(Sigma) table by MOC, region flux
+  P + (1-P) Sigma_p/Sigma_t (NR) or the ultra-fine slowing-down `march`
+  (1 eV-24.8 keV, exact elastic kernels, moderator level depleted).
+  `heterogeneous.py`: transport-corrected (outflow) macroscopic XS from
+  nuclide libraries, MOC+CMFD VERA pin; shielding none|equivalence|cp|sd.
+  C2: `ring_escape` (E_k by reciprocity), `collision_matrix` (P_j->i
+  between pellet rings), multi-ring `march` (each ring its own source; Rust
+  `slowing.rs`, parity 1e-12), `sph_factors` (one-group fixed-source MOC per
+  group, mu <- <phi>/phi_MG); `run(ring_shielding=, sph=)`, ring regions
+  are MOC materials `fuel/0`(centre)..`fuel/2` (`Geometry.split_rings`).
+  `reference.py`: JSON spec for OpenMC + comparison by nuclide/ring/band;
+  tools side `checks/openmc_library.py`, `checks/openmc_pin.py` (outside
+  lint scope, run in tools env; results in endf-data/openmc/runs/).
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -114,7 +133,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `17-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `19-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -169,7 +188,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD; theory docs ch. 0–17. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings; theory docs ch. 0–19. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -183,10 +202,14 @@ self-shielding (C1).
   - B2 MOC, verified on C5G7 7-group data (done; Rust sweep included)
   - B3 CMFD acceleration (done: C5G7 1242 -> ~33 iterations)  
 - **C: coupling**
-  - **C1 self-shielding (equivalence/Bondarenko + Dancoff, or subgroup) (next)**
-  - C2 real pin cell vs VERA problem 1
-  - C3 homogenize/condense to 2 groups + B1 → nodal (branch `claude-nodal`)
-  - C4 CP cross-check, 17×17 assembly
+  - C1 self-shielding (done: equivalence, exact escape probabilities,
+    ultra-fine slowing down; VERA 1A -713 pcm, Doppler trends within ~10%)
+  - C2 real pin cell vs OpenMC CE on ENDF/B-VIII.1 (done: data vs KENO
+    -24..+69 pcm; SPH + coupled pellet rings take 1A from -689 to -162 pcm vs
+    OpenMC; 1D -348, Doppler steps 8-12% too strong; rest = U-238 capture in
+    large-Gamma_n resonances, clad NR treatment a candidate)
+  - **C3 homogenize/condense to 2 groups + B1 → nodal (next; branch `claude-nodal`)**
+  - C4 CP cross-check (also pointwise fuel+gap+clad slowing down), 17×17 assembly
 - **M: model building** (describe the reactor once, as data; generate every calculation from it)
   - M1 declarative model file: TOML layers + states, number densities, homogenization (done)
   - M2 state-matrix driver: lattice calculation at every branch point

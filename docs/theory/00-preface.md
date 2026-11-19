@@ -31,7 +31,8 @@ $$
 The tables are first built at **0 K** (no thermal motion of the target
 nuclei), then Doppler-broadened to the temperatures of a reactor. The
 unresolved resonance range, self-shielding and thermal scattering come next;
-chapter 16 previews them.
+chapter 16 treats self-shielding in a pin cell, chapter 17 checks it against
+continuous-energy Monte Carlo and corrects it, and chapter 18 previews the rest.
 
 ## How to read these notes {.unnumbered}
 
@@ -51,7 +52,12 @@ chapter 16 previews them.
   as data, from materials to the core map. Chapter 14 builds the geometry of
   the transport solver: flat-source regions, cyclic tracks and ray tracing;
   chapter 15 solves the transport equation on them (MOC) and checks the
-  result on the C5G7 benchmark.
+  result on the C5G7 benchmark. Chapter 16 joins the two tracks: resonance
+  self-shielding of a heterogeneous pin cell, solved with MOC on the
+  libraries of chapters 10 and 11. Chapter 17 compares that pin cell with a
+  continuous-energy Monte Carlo calculation on the same data, separates data
+  from method, and fixes the two largest method errors it finds
+  (superhomogenization and spatially dependent shielding).
 * Sections marked **(derivation)** can be skipped on a first reading; the
   results they derive are stated before them.
 

@@ -17,6 +17,7 @@ pub mod pointwise;
 pub mod raytrace;
 pub mod reconstruct;
 pub mod reich_moore;
+pub mod slowing;
 pub mod spin_groups;
 pub mod tab1;
 pub mod thermal;
@@ -685,6 +686,43 @@ fn cmfd_solve<'py>(
     Ok((k, phi.into_pyarray(py), outer))
 }
 
+/// Ultra-fine slowing-down march of R regions (`shielding.march`).
+/// Returns (psi flattened (n, R), psi_M (n)).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn slowing_down_march<'py>(
+    py: Python<'py>,
+    energies: PyReadonlyArray1<'py, f64>,
+    total: PyReadonlyArray1<'py, f64>,
+    scatter: PyReadonlyArray1<'py, f64>,
+    alphas: PyReadonlyArray1<'py, f64>,
+    escape: PyReadonlyArray1<'py, f64>,
+    collide: PyReadonlyArray1<'py, f64>,
+    volumes: PyReadonlyArray1<'py, f64>,
+    history: PyReadonlyArray1<'py, f64>,
+    start: usize,
+    share: f64,
+    outside: PyReadonlyArray1<'py, f64>,
+) -> PyResult<(Array<'py>, Array<'py>)> {
+    let inp = slowing::Input {
+        energies: energies.as_slice()?,
+        total: total.as_slice()?,
+        scatter: scatter.as_slice()?,
+        alphas: alphas.as_slice()?,
+        escape: escape.as_slice()?,
+        collide: collide.as_slice()?,
+        volumes: volumes.as_slice()?,
+        history: history.as_slice()?,
+        start,
+        share,
+        outside: outside.as_slice()?,
+    };
+    let (psi, levels) = py
+        .detach(|| slowing::march(&inp))
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    Ok((psi.into_pyarray(py), levels.into_pyarray(py)))
+}
+
 /// The n-point Gauss-Legendre rule (for parity tests with numpy's leggauss).
 #[pyfunction]
 fn gauss_legendre<'py>(py: Python<'py>, n: usize) -> (Array<'py>, Array<'py>) {
@@ -825,6 +863,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(trace_tracks, m)?)?;
     m.add_function(wrap_pyfunction!(moc_sweep, m)?)?;
     m.add_function(wrap_pyfunction!(cmfd_solve, m)?)?;
+    m.add_function(wrap_pyfunction!(slowing_down_march, m)?)?;
     m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;

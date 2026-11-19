@@ -25,6 +25,11 @@ MODEL        ?= vera-p1
 STATE        ?= 1A
 CORE         ?= c5g7
 MOC_ARGS     ?=
+STATES       ?= 1A
+PIN_SHIELD   ?= sd
+PIN_ARGS     ?=
+OPENMC_TEMPS ?= 565 600 900 1200
+OPENMC_ARGS  ?=
 AZIM         ?= 64
 SPACING      ?= 0.05
 
@@ -42,7 +47,7 @@ MAMBA_URL    := https://github.com/mamba-org/micromamba-releases/releases/downlo
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        tools njoy openmc tools-check clean-tools model tracks moc data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
+        tools njoy openmc tools-check clean-tools openmc-library openmc-pin model tracks moc pin data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -139,6 +144,19 @@ moc:  ## MOC + CMFD eigenvalue of a model core vs its reference (CORE=c5g7 MOC_A
 
 tracks:  ## cyclic tracks + ray tracing of a model lattice (MODEL=vera-p1 AZIM=64 SPACING=0.01)
 	$(PY) -m fission.transport $(MODEL) --azim $(AZIM) --spacing $(SPACING)
+
+pin:  ## k-inf of the heterogeneous VERA pin cell, MOC (STATES="1A 1B" PIN_SHIELD=sd|cp|equivalence|none PIN_ARGS=--rings)
+	$(PY) -m fission.pincell.heterogeneous $(STATES) --shielding $(PIN_SHIELD) $(PIN_ARGS)
+
+openmc-library:  ## NJOY -> OpenMC HDF5 library of our ENDF files (OPENMC_TEMPS="565 600 900 1200"; check only)
+	$(IN_TOOLS) python checks/openmc_library.py --temps $(OPENMC_TEMPS)
+
+openmc-pin:  ## OpenMC CE reference of the VERA pin vs this code (STATES=1A OPENMC_ARGS=--no-ptables PIN_ARGS=--rings)
+	@for s in $(STATES); do \
+	  $(PY) -m fission.pincell.reference spec $$s $(OPENMC_ARGS) && \
+	  $(IN_TOOLS) python checks/openmc_pin.py endf-data/openmc/runs/$$s.spec.json endf-data/openmc/runs/$$s.result.json && \
+	  $(PY) -m fission.pincell.reference compare $$s --shielding $(PIN_SHIELD) $(PIN_ARGS) || exit 1; \
+	done
 
 model:  ## check a model file and print number densities (MODEL=vera-p1 STATE=1A)
 	$(PY) -m fission.model $(MODEL) --state $(STATE)

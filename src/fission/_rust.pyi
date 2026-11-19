@@ -122,6 +122,19 @@ def infinite_medium(
     fission: Sequence[float],
     tol: float = ...,
 ) -> tuple[float, Array, int]: ...
+def slowing_down_march(
+    energies: Array,
+    total: Array,
+    scatter: Array,
+    alphas: Array,
+    escape: Array,
+    collide: Array,
+    volumes: Array,
+    history: Array,
+    start: int,
+    share: float,
+    outside: Array,
+) -> tuple[Array, Array]: ...
 def gauss_legendre(n: int) -> tuple[Array, Array]: ...
 def trace_tracks(
     pitch: float,

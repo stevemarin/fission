@@ -148,6 +148,22 @@ class Geometry:
                 out.extend([c.materials[ring]] * c.sectors)
         return out
 
+    def split_rings(self, material: str) -> Geometry:
+        """The same mesh with the rings of `material` relabelled ``material/0``
+        (innermost), ``material/1``... in every cell, so that each ring can
+        get its own cross sections (spatial self-shielding)."""
+        cells = []
+        for c in self.cells:
+            k, labels = 0, []
+            for m in c.materials:
+                if m == material:
+                    labels.append(f"{m}/{k}")
+                    k += 1
+                else:
+                    labels.append(m)
+            cells.append(CellMesh(c.radii, tuple(labels), c.sectors))
+        return Geometry(self.pitch, self.nx, self.ny, tuple(cells))
+
     def areas(self) -> np.ndarray:
         """Exact area of every FSR (cm^2)."""
         return np.concatenate([c.areas(self.pitch) for c in self.cells])

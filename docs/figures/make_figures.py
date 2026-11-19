@@ -946,6 +946,123 @@ def fig_c5g7():
     save(fig, "c5g7")
 
 
+# ---------------------------------------------------------------- chapter 16
+def fig_self_shielding():
+    from fission.model import load_model, number_densities
+    from fission.pincell.run import UNSUPPORTED
+    from fission.pincell.shielding import (
+        dancoff,
+        escape_probability,
+        potential_scattering,
+        region_flux,
+    )
+    from fission.transport import Geometry, cyclic_tracks
+    from fission.transport.moc import tracking
+
+    model = load_model("vera-p1")
+    st = model.states["1A"]
+    dens = {
+        k: {n: x for n, x in number_densities(v, st).items() if n not in UNSUPPORTED}
+        for k, v in model.materials.items()
+    }
+    sigma_p = {
+        k: sum(x * potential_scattering(n) for n, x in d.items())
+        for k, d in dens.items()
+    }
+    g = Geometry.from_lattice(
+        model, "cell", rings={"fuel": 3}, sectors=8, outer_ring=0.6
+    )
+    p = tracking(g, cyclic_tracks(g.width, g.height, 64, 0.02), 3, faces=False)
+    e = dancoff(p, sigma_p, "fuel")
+    table = escape_probability(p, sigma_p, "fuel")
+    areas = dict.fromkeys(model.materials, 0.0)
+    for m, a in zip(g.materials(), p.areas, strict=True):
+        areas[m] += a
+    cell = [(areas[k], dens[k], st.temperature(model.materials[k].temperature))
+            for k in model.materials]  # fmt: skip
+    energies, nr = region_flux(dens["fuel"], 565.0, table)
+    energies_sd, sd = region_flux(dens["fuel"], 565.0, table, slowing_down=True, cell=cell,
+                                  region=list(model.materials).index("fuel"))  # fmt: skip
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.6))
+    sig, esc = table
+    axes[0].semilogx(sig, esc, color=C[0], label="MOC (exact for flat sources)")
+    axes[0].semilogx(sig, e.sigma_e / (sig + e.sigma_e), color=C[1], ls="--",
+                     label=rf"rational, $\Sigma_e$ = {e.sigma_e:.3f} /cm")  # fmt: skip
+    axes[0].set_xlabel(r"fuel total cross section $\Sigma$ (1/cm)")
+    axes[0].set_ylabel("escape probability $P$")
+    axes[0].set_title(f"VERA 1A fuel pin, Dancoff C = {e.dancoff:.3f}", fontsize=10)
+    axes[0].legend(fontsize=8)
+    x, y = np.asarray(energies), np.asarray(nr)
+    xs, ys = np.asarray(energies_sd), np.asarray(sd)
+    w, ws = (x > 30) & (x < 45), (xs > 30) & (xs < 45)
+    axes[1].plot(x[w], y[w], color=C[1], label="narrow resonance (NR)")
+    axes[1].plot(xs[ws], ys[ws], color=C[0], label="slowing down solved")
+    axes[1].set_xlabel("neutron energy (eV)")
+    axes[1].set_ylabel("fuel flux per unit lethargy")
+    axes[1].set_title("around the 36.7 eV resonance of U-238", fontsize=10)
+    axes[1].legend(fontsize=8)
+    save(fig, "self_shielding")
+
+
+def fig_sph_rings():
+    from fission.model import load_model, number_densities
+    from fission.pincell.heterogeneous import run
+    from fission.pincell.run import UNSUPPORTED
+    from fission.pincell.shielding import (
+        collision_matrix,
+        escape_probability,
+        potential_scattering,
+        region_flux,
+    )
+    from fission.processing.groups import XMAS_172
+    from fission.transport import Geometry, cyclic_tracks
+    from fission.transport.moc import tracking
+
+    r = run("1A", "sd", sph=True)
+    mu = r.sph["fuel"]
+    model = load_model("vera-p1")
+    st = model.states["1A"]
+    dens = {
+        k: {n: x for n, x in number_densities(v, st).items() if n not in UNSUPPORTED}
+        for k, v in model.materials.items()
+    }
+    sigma_p = {
+        k: sum(x * potential_scattering(n) for n, x in d.items())
+        for k, d in dens.items()
+    }
+    g = Geometry.from_lattice(
+        model, "cell", rings={"fuel": 3}, sectors=8, outer_ring=0.6
+    )
+    p = tracking(g, cyclic_tracks(g.width, g.height, 64, 0.02), 3, faces=False)
+    table = escape_probability(p, sigma_p, "fuel")
+    _, matrix, volumes = collision_matrix(p, sigma_p, "fuel")
+    shapes = region_flux(dens["fuel"], 565.0, table, slowing_down=True,
+                         rings=(1.0 - matrix.sum(axis=2)).T,
+                         collisions=(matrix, volumes))  # fmt: skip
+
+    fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.6))
+    b = np.asarray(XMAS_172.boundaries)
+    changed = np.abs(mu - 1) > 1e-6
+    axes[0].stairs(mu[::-1], b[::-1], color=C[0])
+    lo, hi = b[1:][changed].min(), b[:-1][changed].max()
+    axes[0].set_xscale("log")
+    axes[0].set_xlim(lo, hi)
+    axes[0].set_ylim(0.88, 1.01)
+    axes[0].set_xlabel("neutron energy (eV)")
+    axes[0].set_ylabel(r"SPH factor $\mu_g$ of the fuel")
+    axes[0].set_title("VERA 1A, XMAS-172 groups", fontsize=10)
+    for k, (energies, flux) in enumerate(shapes):
+        x, y = np.asarray(energies), np.asarray(flux)
+        w = (x > 30) & (x < 45)
+        axes[1].plot(x[w], y[w], color=C[k], label=["centre", "middle", "rim"][k])
+    axes[1].set_xlabel("neutron energy (eV)")
+    axes[1].set_ylabel("ring flux per unit lethargy")
+    axes[1].set_title("three equal-area pellet rings, 36.7 eV resonance", fontsize=10)
+    axes[1].legend(fontsize=8)
+    save(fig, "sph_rings")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -976,5 +1093,7 @@ if __name__ == "__main__":
         fig_pincell_capture,
         fig_tracks,
         fig_c5g7,
+        fig_self_shielding,
+        fig_sph_rings,
     ):
         make()

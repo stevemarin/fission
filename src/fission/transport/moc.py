@@ -98,6 +98,44 @@ class Problem:
         return 2 * math.pi * wa[:, None] * (self.polar.weight * self.polar.sin)[None, :]
 
 
+def tracking(
+    geometry: Geometry,
+    tracks: TrackSet,
+    n_polar: int = 3,
+    use_rust: bool = True,
+    faces: bool = True,
+) -> Problem:
+    """Trace and area-correct the segments; no cross sections yet.
+
+    faces: also find where tracks cross the cell faces, so that sweeps can
+    tally net currents (needed by CMFD). The result can drive fixed-source
+    sweeps directly (``fixed_source``) or get materials from ``build``.
+    """
+    segments = trace(geometry, tracks, use_rust)
+    areas = geometry.areas()
+    estimated = tracks.weights @ track_areas(geometry, tracks, segments)
+    segments.length = segments.length * (areas / estimated)[segments.region]
+    faces_crossed = crossings(geometry, tracks, segments) if faces else None
+    return Problem(
+        geometry, tracks, segments, Polar.gauss(n_polar), areas,
+        np.zeros(geometry.regions, dtype=np.int64), [], faces_crossed,
+    )  # fmt: skip
+
+
+def with_materials(problem: Problem, xs: dict[str, MacroXS]) -> Problem:
+    """The same tracking with cross sections by material name."""
+    names = sorted(set(problem.geometry.materials()))
+    missing = [n for n in names if n not in xs]
+    if missing:
+        raise ValueError(f"no cross sections for materials {missing}")
+    index = {n: i for i, n in enumerate(names)}
+    material = np.array([index[m] for m in problem.geometry.materials()])
+    return Problem(
+        problem.geometry, problem.tracks, problem.segments, problem.polar,
+        problem.areas, material, [xs[n] for n in names], problem.crossings,
+    )  # fmt: skip
+
+
 def build(
     model: Model,
     geometry: Geometry,
@@ -105,30 +143,47 @@ def build(
     n_polar: int = 3,
     use_rust: bool = True,
     faces: bool = True,
+    xs: dict[str, MacroXS] | None = None,
 ) -> Problem:
     """Trace, correct the segment lengths, and map regions to cross sections.
 
-    faces: also find where tracks cross the cell faces, so that sweeps can
-    tally net currents (needed by CMFD).
+    xs: cross sections by material name; by default the model's macroscopic
+    library entries (``macroscopic = ...`` materials).
     """
-    names = sorted(set(geometry.materials()))
-    xs = []
-    for name in names:
-        mat = model.materials[name]
-        if mat.macroscopic is None:
-            raise ValueError(f"material {name!r} has no macroscopic cross sections")
-        xs.append(model.multigroup[mat.macroscopic])
-    index = {n: i for i, n in enumerate(names)}
-    material = np.array([index[m] for m in geometry.materials()])
-    segments = trace(geometry, tracks, use_rust)
-    areas = geometry.areas()
-    estimated = tracks.weights @ track_areas(geometry, tracks, segments)
-    segments.length = segments.length * (areas / estimated)[segments.region]
-    faces_crossed = crossings(geometry, tracks, segments) if faces else None
-    return Problem(
-        geometry, tracks, segments, Polar.gauss(n_polar), areas, material, xs,
-        faces_crossed,
-    )  # fmt: skip
+    if xs is None:
+        xs = {}
+        for name in set(geometry.materials()):
+            mat = model.materials[name]
+            if mat.macroscopic is None:
+                raise ValueError(f"material {name!r} has no macroscopic cross sections")
+            xs[name] = model.multigroup[mat.macroscopic]
+    return with_materials(tracking(geometry, tracks, n_polar, use_rust, faces), xs)
+
+
+def fixed_source(
+    problem: Problem,
+    sigma_t: np.ndarray,
+    source: np.ndarray,
+    tol: float = 1e-10,
+    max_sweeps: int = 10000,
+    use_rust: bool = True,
+) -> tuple[np.ndarray, float]:
+    """Flux of a purely absorbing problem with a fixed source (no scattering).
+
+    sigma_t, source: (regions, groups), source Q per steradian. Sweeps are
+    repeated until the boundary angular fluxes stop changing. Returns
+    (scalar flux, leakage).
+    """
+    psi = np.zeros((len(problem.tracks), 2, len(problem.polar.sin), sigma_t.shape[1]))
+    run = _rust_sweep if use_rust else sweep
+    for _ in range(max_sweeps):
+        tally, new, leakage, _ = run(problem, sigma_t, source, psi)
+        change = np.max(np.abs(new - psi)) / max(float(np.max(np.abs(new))), 1e-300)
+        psi = new
+        if change < tol:
+            break
+    flux = FOUR_PI * source / sigma_t + tally / (sigma_t * problem.areas[:, None])
+    return flux, leakage
 
 
 # ---------------------------------------------------------------- one sweep
@@ -216,13 +271,13 @@ def _rust_sweep(problem: Problem, sigma_t, source, psi_in):
         tr.bwd_forward.astype(np.int64), np.ascontiguousarray(problem.weights().ravel()),
         problem.polar.sin, np.ascontiguousarray(sigma_t.ravel()),
         np.ascontiguousarray(source.ravel()), np.ascontiguousarray(psi_in.ravel()),
-        problem.groups, faces,
+        source.shape[1], faces,
     )  # fmt: skip
     return (
         tally.reshape(source.shape),
         psi_next.reshape(psi_in.shape),
         leakage,
-        None if cross is None else currents.reshape(cross.n_faces, problem.groups),
+        None if cross is None else currents.reshape(cross.n_faces, source.shape[1]),
     )
 
 
