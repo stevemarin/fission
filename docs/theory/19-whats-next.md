@@ -9,10 +9,11 @@ chapter 13 describes the reactor model they are applied to; chapter 14
 builds the geometry of the transport solver, chapter 15 the solver itself,
 chapter 16 shields the cross sections of a real pin cell, and chapter 17
 checks that pin against continuous-energy Monte Carlo on the same data and
-corrects it (SPH factors, rings in the pellet). This chapter previews what
+corrects it (SPH factors, rings in the pellet), and chapter 18 condenses it
+into two-group constants for a nodal code. This chapter previews what
 remains.
 
-## Beyond chapter 17
+## Beyond chapter 18
 
 The pin cell is now within 160–350 pcm of OpenMC on the same data, and
 the error sits in U-238 capture in resonances with large neutron widths.
@@ -24,10 +25,13 @@ In rough order of importance:
   tabulated against one cross section. This is the pointwise
   collision-probability method, and it is also the cross-check of MOC
   planned for step C4.
-* **Few groups for the core.** The pin and then the 17×17 assembly are
-  homogenized and condensed to two groups for nodal diffusion (C3). SPH
-  factors appear there again, in their original role: making the
-  homogenized assembly reproduce the heterogeneous reaction rates.
+* **The assembly.** Chapter 18 homogenizes one pin in an infinite lattice.
+  A 17×17 assembly with guide tubes (C4) is the real node of a core
+  calculation. Its constants need discontinuity factors, which cancel for
+  identical cells but not between different assemblies.
+* **Branches and tables.** The core needs constants at every fuel
+  temperature, water density and boron concentration (M2–M3), and they
+  must get to the nodal code (M4).
 * **Depletion.** Ring-wise shielding matters most once plutonium builds up
   at the pellet rim.
 

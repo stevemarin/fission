@@ -33,6 +33,8 @@ make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|nr; MODEL=vera-p1)
 make pin STATES="1A 1B" PIN_SHIELD=sd PIN_ARGS="--rings --sph"  # heterogeneous VERA pin, MOC + shielded ENDF libraries
+make fewgroup STATES=1A PIN_ARGS="--rings --sph"  # 2-group constants (homogenize, B1, condense) -> endf-data/fewgroup/
+make nodal-check STATE=1A  # run branch claude-nodal (git archive, tools env) on those constants
 make openmc-library  # NJOY -> OpenMC HDF5 of our ENDF files (endf-data/openmc/, ~10 min; check only)
 make openmc-pin STATES=1A PIN_ARGS="--rings --sph"  # OpenMC CE reference of the pin vs this code (~15 min/state)
 make model MODEL=vera-p1 STATE=1A  # check a model file, print number densities
@@ -107,6 +109,14 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   `reference.py`: JSON spec for OpenMC + comparison by nuclide/ring/band;
   tools side `checks/openmc_library.py`, `checks/openmc_pin.py` (outside
   lint scope, run in tools env; results in endf-data/openmc/runs/).
+- `src/fission/fewgroup/` (C3): `homogenize.py` (flux-volume weighting of a
+  heterogeneous Result, plain totals + P0/P1, chi by region production),
+  `b1.py` (B1 equations, alpha(B/Sigma_t), secant search for k=1, D = J/(B phi)),
+  `condense.py` (`FewGroup`, current-weighted D, `material()` = kwargs of
+  nodal.Material, JSON writer), `kappa.py` (MF1/MT458 recoverable energy ER;
+  kept outside fission/endf so the table cache stays valid). CLI
+  `python -m fission.fewgroup`. `reference.few_group_reference` condenses
+  OpenMC tallies.
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -133,7 +143,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `19-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `20-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -188,7 +198,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings; theory docs ch. 0–19. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1); theory docs ch. 0–20. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -208,8 +218,13 @@ self-shielding (C1).
     -24..+69 pcm; SPH + coupled pellet rings take 1A from -689 to -162 pcm vs
     OpenMC; 1D -348, Doppler steps 8-12% too strong; rest = U-238 capture in
     large-Gamma_n resonances, clad NR treatment a candidate)
-  - **C3 homogenize/condense to 2 groups + B1 → nodal (next; branch `claude-nodal`)**
-  - C4 CP cross-check (also pointwise fuel+gap+clad slowing down), 17×17 assembly
+  - C3 homogenize/condense to 2 groups + B1 → nodal (done: flux-volume
+    homogenization keeps the MOC k to 4e-10; B1 critical B^2 = 3.26e-3/cm^2
+    for 1A, M^2 57 cm^2; two-group constants run unchanged in branch
+    `claude-nodal` via `make nodal-check`; vs OpenMC 2-group XS within 0.5%,
+    thermal fuel/water flux ratio +0.4%)
+  - **C4 (next): CP cross-check (also pointwise fuel+gap+clad slowing
+    down), 17×17 assembly, discontinuity factors**
 - **M: model building** (describe the reactor once, as data; generate every calculation from it)
   - M1 declarative model file: TOML layers + states, number densities, homogenization (done)
   - M2 state-matrix driver: lattice calculation at every branch point

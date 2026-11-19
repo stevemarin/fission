@@ -173,6 +173,26 @@ def compare(r, result: dict) -> str:
     return "\n".join(lines)
 
 
+def few_group_reference(result: dict, cut: float = 0.625) -> dict[str, np.ndarray]:
+    """Cell-homogenized two-group constants from OpenMC's tallies, condensed
+    with OpenMC's own (infinite-lattice) spectrum: flux ratio and
+    Sigma_x,G = sum of reaction rates / sum of track-length flux."""
+    e = np.asarray(XMAS_172.boundaries)
+    mid = np.sqrt(e[:-1] * e[1:])
+    owner = (mid < cut).astype(int)  # 0 fast, 1 thermal
+    flux = np.asarray(result["flux"]).sum(axis=0)  # all regions
+    out = {"flux": np.bincount(owner, flux, 2)}
+    for score, key in (("absorption", "sigma_a"), ("nu-fission", "nu_sigma_f"),
+                       ("fission", "sigma_f")):  # fmt: skip
+        rate = sum(
+            np.asarray(v[score]["mean"])
+            for nucs in result["rates"].values()
+            for v in nucs.values()
+        )
+        out[key] = np.bincount(owner, rate, 2) / out["flux"]
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="python -m fission.pincell.reference")
     sub = ap.add_subparsers(dest="command", required=True)

@@ -32,7 +32,8 @@ The tables are first built at **0 K** (no thermal motion of the target
 nuclei), then Doppler-broadened to the temperatures of a reactor. The
 unresolved resonance range, self-shielding and thermal scattering come next;
 chapter 16 treats self-shielding in a pin cell, chapter 17 checks it against
-continuous-energy Monte Carlo and corrects it, and chapter 18 previews the rest.
+continuous-energy Monte Carlo and corrects it, chapter 18 condenses it into
+two-group constants for a nodal code, and chapter 19 previews the rest.
 
 ## How to read these notes {.unnumbered}
 
@@ -57,7 +58,9 @@ continuous-energy Monte Carlo and corrects it, and chapter 18 previews the rest.
   libraries of chapters 10 and 11. Chapter 17 compares that pin cell with a
   continuous-energy Monte Carlo calculation on the same data, separates data
   from method, and fixes the two largest method errors it finds
-  (superhomogenization and spatially dependent shielding).
+  (superhomogenization and spatially dependent shielding). Chapter 18
+  homogenizes the cell, corrects its spectrum for leakage (B1) and condenses
+  it to the two-group constants a nodal diffusion code reads.
 * Sections marked **(derivation)** can be skipped on a first reading; the
   results they derive are stated before them.
 
