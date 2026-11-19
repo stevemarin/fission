@@ -3,7 +3,7 @@
 A lattice-physics code written from scratch as a **learning project**: raw
 ENDF/B-VIII.1 → pointwise cross sections → 2D pin-cell transport (MOC, later
 CP) → few-group constants → 3D nodal diffusion. No NJOY/OpenMC in the
-pipeline (they may be used as independent checks). Python package:
+pipeline (they are installed under tools/ for independent checks: `make tools`). Python package:
 `fission`. An earlier NEM/CMFD nodal diffusion code lives on branch
 `claude-nodal`.
 
@@ -23,6 +23,7 @@ pipeline (they may be used as independent checks). Python package:
 ## Commands (use `make`, it is allow-listed)
 
 ```sh
+make tools        # NJOY 2016.78 + OpenMC 0.16.0 (conda-forge) in tools/env, for independent checks
 make check        # lint + format-check + mypy + pytest + cargo test (run before reporting done)
 make test ARGS="-k reich -x"   # pytest; slow tests are deselected by default
 make test-slow    # full-resolution physics checks (minutes)
@@ -30,12 +31,17 @@ make fix          # ruff --fix + format
 make data         # download pin-cell evaluations into endf-data/
 make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
+make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|nr)
 make groups       # XMAS-172 libraries, free-gas thermal + H in H2O (endf-data/groups/); make library NUC=U238 T=293.6
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
 make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make secondary   # quick CLIs
 ```
 
+- NJOY and OpenMC live in an isolated micromamba env (`tools/`, gitignored),
+  never in the uv env or the pipeline. Run them with
+  `tools/bin/micromamba run -r tools/mamba -p tools/env <cmd>` (Makefile
+  variable `IN_TOOLS`); exchange data with checking scripts through files.
 - Everything runs through `uv run`. Editing `rust/**/*.rs` or `Cargo.toml`
   makes the next `uv run` rebuild the extension (`[tool.uv] cache-keys`); no
   manual `maturin develop` needed.
@@ -49,6 +55,10 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   breaks), `library.py` (GroupLibrary cache + CLI, `thermal=` option),
   `thermal.py` (free-gas and S(alpha,beta) kernels, `with_thermal`). Kept outside `endf/` so
   edits do not invalidate the 0 K table cache.
+- `src/fission/pincell/`: `vera.py` (VERA problem 1 geometry, number
+  densities and KENO references from CASL-U-2012-0131-004 Rev. 4),
+  `infinite.py` (homogeneous mixture, direct eigen solve, four factors),
+  `run.py` (driver; NR self-shielding via a flux shape 1/Sigma_t(E)).
 - `src/fission/data.py`: ENDF/B-VIII.1 downloader (NNDC tarballs, SHA-1 checked)
   → `endf-data/` (gitignored).
 - `src/fission/endf/`: ENDF-6 reader (`records`, `interpolation`,
@@ -62,13 +72,17 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   (two-body CM->LAB, Kalbach-Mann), `incident` (incl. unit-base
   interpolation), `sab` (MF7 S(alpha,beta) reader). A subpackage, so it is
   outside the 0 K table-cache fingerprint (but inside the processing one).
+- `rust/src/` Rust ports of A3–A5: `groupr.rs` (hat integrals), `gauss.rs`
+  (Gauss–Legendre of any order), `transfer.rs` (two-body kernels + tables,
+  threaded), `thermal.rs` (free gas + S(alpha,beta)), `infinite.rs` (LU +
+  power iteration). Still Python: continuum (MF6 LAW=1) and fission kernels.
 - `rust/src/`: PyO3 module `fission._rust` (stubs in `src/fission/_rust.pyi`).
   Rust structs read Python objects by attribute via `FromPyObject`, so the
   Python dataclasses are the interface.
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `13-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `14-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -93,6 +107,11 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   (LAB P_l). All constants are Int_g sigma w K with K tabulated on a coarse
   kernel grid; only the hat integrals A[g, j] see the fine grid (Rust
   `groupr.rs`). Libraries are infinitely dilute (self-shielding is C1).
+- Flux shapes: `group_library(flux_shape=(E, F))` weights every integral by
+  w F (table pre-multiplied with `shape_table`); `cached_groups(...,
+  flux_shape, shape_name)` caches them. Used for homogeneous NR shielding.
+- Unsupported formats so far: LRF=7 (Fe-54, Fe-57), URR LRU=2 LRF=1 (Fe-58),
+  Reich-Moore negative-J channel spins (Cr-53); left out of VERA clad.
 - Thermal (A4): below 4 eV the elastic rows are replaced by a free-gas kernel
   (default, normalized to the broadened elastic table, as NJOY) or by MF7
   S(alpha,beta) (`thermal="HinH2O"`, absolute). Kernel tabulated every 0.02
@@ -118,7 +137,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering; theory docs ch. 0–13. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf; theory docs ch. 0–14. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -126,9 +145,9 @@ self-shielding (C1).
   - A2 rest of the reader: ν̄, χ, MF4/MF5/MF6 (done)
   - A3 group averaging: σ_g, νσ_f, χ, P0–P3 matrices (done)
   - A4 thermal scattering: free gas + S(α,β) for H in H2O (done)
-  - **A5 infinite-medium spectrum + k∞ of a homogenized pin cell (next)**
+  - A5 infinite-medium spectrum + k∞ of the homogenized VERA 1 cell (done)
 - **B: transport**
-  - B1 pin-cell geometry + cyclic ray tracing
+  - **B1 pin-cell geometry + cyclic ray tracing (next)**
   - B2 MOC, verified on C5G7 7-group data
   - B3 Rust sweep
 - **C: coupling**

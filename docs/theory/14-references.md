@@ -87,6 +87,15 @@ source or a standard text.
   effective temperature.
   <https://doi.org/10.1103/PhysRev.55.190> **(not free)**
 
+## Benchmarks {.unnumbered}
+
+- []{#ref-vera}**[VERA]** A. T. Godfrey, *VERA Core Physics Benchmark
+  Progression Problem Specifications*, CASL-U-2012-0131-004, Revision 4,
+  Oak Ridge National Laboratory (2014). Problem 1: geometry (Table 1), states
+  (Table P1-1), number densities (Table P1-4), CE KENO-VI reference
+  eigenvalues (Table P1-5). <https://corephysics.com/docs/CASL-U-2012-0131-004.pdf>
+  **(free)**. Inputs: <https://github.com/CASL/VERAin> **(free)**
+
 ## Reactor physics {.unnumbered}
 
 - []{#ref-bell}**[Bell & Glasstone]** G. I. Bell, S. Glasstone, *Nuclear

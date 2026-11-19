@@ -24,7 +24,7 @@ from ..endf import Evaluation
 from ..endf import cache as endf_cache
 from ..endf.distributions.sab import scattering_law
 from .cache import cached_doppler, code_fingerprint
-from .groupr import GroupLibrary, group_library
+from .groupr import GroupLibrary, group_library, shape_table
 from .groups import XMAS_172, GroupStructure
 from .thermal import FreeGas, Tabulated, with_thermal
 from .weights import ThermalSlowingDownFission
@@ -86,6 +86,8 @@ def cached_groups(
     groups: GroupStructure = XMAS_172,
     lmax: int = 3,
     thermal: str | None = "free-gas",
+    flux_shape: tuple[list[float], list[float]] | None = None,
+    shape_name: str = "",
     lib: EndfLibrary | None = None,
     refresh: bool = False,
 ) -> GroupLibrary:
@@ -95,6 +97,10 @@ def cached_groups(
     thermal: elastic scattering below 4 eV from a free gas ("free-gas", the
     default), a thermal scattering law of the ENDF thermal sublibrary (e.g.
     "HinH2O" for H1), or None for a target at rest.
+
+    flux_shape = (energies, F): weight w(E) F(E) instead of w(E) inside each
+    group (self-shielding, e.g. a narrow-resonance flux); shape_name labels
+    the cache file, the key includes the shape itself.
     """
     lib = lib or EndfLibrary()
     weight = ThermalSlowingDownFission.at(temperature)
@@ -109,11 +115,18 @@ def cached_groups(
         "weight": weight.describe(),
         "lmax": lmax,
         "thermal": thermal,
+        "shape": None
+        if flux_shape is None
+        else hashlib.sha256(
+            np.asarray(flux_shape[0]).tobytes() + np.asarray(flux_shape[1]).tobytes()
+        ).hexdigest(),
         "code": code_fingerprint(),
     }
     key = hashlib.sha256(json.dumps(meta, sort_keys=True).encode()).hexdigest()
     directory = lib.root / "groups"
     stem = f"{nuclide}-{temperature:g}K-{groups.size}g-{thermal or 'static'}"
+    if flux_shape is not None:
+        stem += f"-{shape_name or 'shaped'}"
     path = directory / f"{stem}-{key[:16]}.npz"
     if not refresh and path.exists():
         cached = load_library(path, key)
@@ -121,22 +134,27 @@ def cached_groups(
             return cached
     ev = Evaluation.from_file(lib.neutron(nuclide))
     table = cached_doppler(nuclide, temperature, lib=lib)
+    if flux_shape is not None:
+        table = shape_table(table, *flux_shape)
     gl = group_library(
-        ev, table, groups, weight, nuclide=nuclide, temperature=temperature, lmax=lmax
-    )
+        ev, table, groups, weight, nuclide=nuclide, temperature=temperature,
+        lmax=lmax, flux_shape=flux_shape,
+    )  # fmt: skip
     if thermal == "free-gas":
         model: FreeGas | Tabulated = FreeGas(ev.header.awr, temperature)
         gl = with_thermal(gl, model, weight, (table.energies, table.xs[2]))
     elif thermal:
         law = scattering_law(Evaluation.from_file(lib.thermal(thermal)), temperature)
-        gl = with_thermal(gl, Tabulated(law), weight)
+        gl = with_thermal(gl, Tabulated(law), weight, flux_shape=flux_shape)
     directory.mkdir(parents=True, exist_ok=True)
     save_library(path, gl, {**meta, "key": key})
     # every thermal variant of this nuclide/temperature/structure: only entries
     # built by other code are deleted
     endf_cache.prune_stale(
         directory,
-        f"{nuclide}-{temperature:g}K-{groups.size}g-*.npz",
+        f"{stem}-*.npz"
+        if flux_shape is not None
+        else f"{nuclide}-{temperature:g}K-{groups.size}g-*.npz",
         keep=path,
         code=code_fingerprint(),
     )

@@ -227,6 +227,41 @@ def thermal_kernel(
     return k, total
 
 
+def _model_for_rust(
+    model: Model,
+) -> tuple[int, list[float], list[float], list[float], list[float]]:
+    """A thermal model as plain data for the Rust kernels."""
+    if isinstance(model, FreeGas):
+        return 0, [model.awr, model.kt, model.sigma_bound], [], [], []
+    law = model.law
+    if law.lasym:
+        raise NotImplementedError("asymmetric S(alpha, beta)")
+    scale = model.kt / KT0 if law.lat == 1 else 1.0
+    params = [
+        model.kt,
+        law.a0,
+        law.sigma_bound,
+        scale,
+        law.t_effective / law.temperature,
+    ]
+    return 1, params, law.alpha.tolist(), law.beta.tolist(), law.ln_s.ravel().tolist()
+
+
+def thermal_kernels(
+    model: Model, groups: GroupStructure, lmax: int, energies, use_rust: bool = True
+) -> list[tuple[np.ndarray, float]]:
+    """`thermal_kernel` at many incident energies (in Rust, on all cores)."""
+    if not use_rust:
+        return [thermal_kernel(model, groups, lmax, e) for e in energies]
+    from fission import _rust
+
+    rows = _rust.thermal_table(
+        *_model_for_rust(model), list(groups.boundaries), lmax, list(energies)
+    )
+    g = groups.size
+    return [(r[:-1].reshape(lmax + 1, g), float(r[-1])) for r in rows]
+
+
 def free_gas_total(awr: float, temperature: float, energy: float) -> float:
     """Closed form for sigma_free = 1 b: (1 + 1/2y^2) erf(y) + exp(-y^2)/(y sqrt(pi)),
     y^2 = A E / kT (chapter 8)."""
@@ -248,12 +283,15 @@ def with_thermal(
     cutoff: float = THERMAL_CUTOFF,
     use_rust: bool = True,
     du: float = 0.02,
+    flux_shape: tuple[list[float], list[float]] | None = None,
 ) -> GroupLibrary:
     """The library with its thermal elastic rows replaced by a thermal kernel.
 
     For a free gas, `elastic` = (energies, sigma_el) of the broadened pointwise
     table normalizes the kernel; for S(alpha, beta) the cross sections are
-    absolute and `elastic` is not used. The P0 rows then include upscattering,
+    absolute and `elastic` is not used. With a flux shape (see
+    `groupr.group_library`) the elastic table must already include it.
+    The P0 rows then include upscattering,
     and sigma[2] (and the total) in the thermal groups become the thermal
     scattering cross section.
     """
@@ -269,8 +307,7 @@ def with_thermal(
         seeds |= {a * (b / a) ** (k / n) for k in range(n + 1)}
     z = sorted(seeds)
     values = []
-    for e in z:
-        k, total = thermal_kernel(model, groups, lmax, e)
+    for k, total in thermal_kernels(model, groups, lmax, z, use_rust):
         if isinstance(model, FreeGas):
             k = k / total  # shape only; the broadened elastic table supplies the size
             total = 1.0
@@ -283,7 +320,7 @@ def with_thermal(
             )
         x, col = elastic
     else:
-        x, col = [lo, top], [1.0, 1.0]
+        x, col = flux_shape if flux_shape is not None else ([lo, top], [1.0, 1.0])
     out = (
         group_integrals(x, [col], weight, groups, kern, use_rust)[:, 0, :]
         / lib.flux[:, None]

@@ -71,12 +71,12 @@ impl Weight {
 }
 
 /// Index i with v[i] <= x < v[i+1] (Python `bisect_right(v, x) - 1`).
-fn bisect_right_minus_one(v: &[f64], x: f64) -> usize {
+pub fn bisect_right_minus_one(v: &[f64], x: f64) -> usize {
     v.partition_point(|&a| a <= x).saturating_sub(1)
 }
 
 /// Group containing e for descending boundaries (mirrors `GroupStructure.find`).
-fn find_group(boundaries: &[f64], e: f64) -> Option<usize> {
+pub fn find_group(boundaries: &[f64], e: f64) -> Option<usize> {
     let n = boundaries.len() - 1;
     if !(boundaries[n] <= e && e <= boundaries[0]) {
         return None;

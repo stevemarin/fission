@@ -7,13 +7,17 @@ pub mod channel;
 pub mod complex;
 pub mod doppler;
 pub mod fsum;
+pub mod gauss;
 pub mod groupr;
+pub mod infinite;
 pub mod mlbw;
 pub mod pointwise;
 pub mod reconstruct;
 pub mod reich_moore;
 pub mod spin_groups;
 pub mod tab1;
+pub mod thermal;
+pub mod transfer;
 
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::prelude::*;
@@ -286,6 +290,190 @@ fn group_hat_integrals(
     Ok((gs, js, vs))
 }
 
+// ---------------------------------------------------- two-body transfer kernels
+type PanelIn = (i64, Vec<f64>, Vec<f64>);
+
+fn angular_from(
+    energies: Vec<f64>,
+    breaks: Vec<usize>,
+    laws: Vec<i64>,
+    panels: Vec<PanelIn>,
+) -> PyResult<transfer::Angular> {
+    if energies.is_empty() {
+        return Ok(transfer::Angular::isotropic());
+    }
+    let panels = panels
+        .into_iter()
+        .map(|(kind, a, b)| {
+            if kind == 0 {
+                transfer::Panel::Legendre(a)
+            } else {
+                transfer::Panel::Tabulated(a, b)
+            }
+        })
+        .collect();
+    transfer::Angular::new(energies, breaks, laws, panels)
+        .map_err(pyo3::exceptions::PyValueError::new_err)
+}
+
+/// K_l(E -> g') of a two-body reaction, flattened [l][g'] (port of `two_body_kernel`).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn two_body_kernel<'py>(
+    py: Python<'py>,
+    energies: Vec<f64>,
+    breaks: Vec<usize>,
+    laws: Vec<i64>,
+    panels: Vec<PanelIn>,
+    awr: f64,
+    q: f64,
+    boundaries: Vec<f64>,
+    lmax: usize,
+    energy: f64,
+) -> PyResult<Array<'py>> {
+    let ang = angular_from(energies, breaks, laws, panels)?;
+    Ok(transfer::two_body_kernel(&ang, awr, q, &boundaries, lmax, energy).into_pyarray(py))
+}
+
+/// Tabulated two-body kernel: (energies, rows) (port of `build_kernel` + `two_body_kernel`).
+#[pyfunction]
+#[pyo3(signature = (energies, breaks, laws, panels, awr, q, boundaries, lmax, seeds, sigma=None, adaptive=true, tol=1e-3, atol=1e-5))]
+#[allow(clippy::too_many_arguments)]
+fn two_body_table<'py>(
+    py: Python<'py>,
+    energies: Vec<f64>,
+    breaks: Vec<usize>,
+    laws: Vec<i64>,
+    panels: Vec<PanelIn>,
+    awr: f64,
+    q: f64,
+    boundaries: Vec<f64>,
+    lmax: usize,
+    seeds: Vec<f64>,
+    sigma: Option<tab1::Tab1>,
+    adaptive: bool,
+    tol: f64,
+    atol: f64,
+) -> PyResult<(Array<'py>, Vec<Array<'py>>)> {
+    let ang = angular_from(energies, breaks, laws, panels)?;
+    if seeds.len() < 2 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "need at least two seeds",
+        ));
+    }
+    let (z, rows) = py.detach(|| {
+        transfer::two_body_table(
+            &ang,
+            awr,
+            q,
+            &boundaries,
+            lmax,
+            &seeds,
+            sigma.as_ref(),
+            adaptive,
+            tol,
+            atol,
+        )
+    });
+    Ok((
+        z.into_pyarray(py),
+        rows.into_iter().map(|r| r.into_pyarray(py)).collect(),
+    ))
+}
+
+// ---------------------------------------------------- thermal kernels
+/// A thermal model from Python: kind 0 = free gas [awr, kT, sigma_b];
+/// kind 1 = tabulated [kT, A0, sigma_b, scale, T_eff/T] + alpha, beta, ln S.
+fn thermal_model(
+    kind: i64,
+    params: Vec<f64>,
+    alpha: Vec<f64>,
+    beta: Vec<f64>,
+    ln_s: Vec<f64>,
+) -> PyResult<thermal::Model> {
+    let bad = || pyo3::exceptions::PyValueError::new_err("bad thermal model parameters");
+    match kind {
+        0 if params.len() == 3 => Ok(thermal::Model::FreeGas {
+            awr: params[0],
+            kt: params[1],
+            sigma_bound: params[2],
+        }),
+        1 if params.len() == 5
+            && alpha.len() >= 2
+            && beta.len() >= 2
+            && ln_s.len() == alpha.len() * beta.len() =>
+        {
+            Ok(thermal::Model::Tabulated {
+                kt: params[0],
+                a0: params[1],
+                sigma_bound: params[2],
+                scale: params[3],
+                t_ratio: params[4],
+                alpha,
+                beta,
+                ln_s,
+            })
+        }
+        _ => Err(bad()),
+    }
+}
+
+/// Thermal kernels at many incident energies: per energy the flattened
+/// K_l(E -> g') followed by the total (port of `thermal_kernel`).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn thermal_table<'py>(
+    py: Python<'py>,
+    kind: i64,
+    params: Vec<f64>,
+    alpha: Vec<f64>,
+    beta: Vec<f64>,
+    ln_s: Vec<f64>,
+    boundaries: Vec<f64>,
+    lmax: usize,
+    energies: Vec<f64>,
+) -> PyResult<Vec<Array<'py>>> {
+    let model = thermal_model(kind, params, alpha, beta, ln_s)?;
+    let rows = py.detach(|| {
+        transfer::parallel_map(&energies, |e| {
+            let (mut k, total) = thermal::thermal_kernel(&model, &boundaries, lmax, e);
+            k.push(total);
+            k
+        })
+    });
+    Ok(rows.into_iter().map(|r| r.into_pyarray(py)).collect())
+}
+
+/// k-infinity by power iteration (port of `pincell.infinite.solve`):
+/// returns (k, flux, iterations).
+#[pyfunction]
+#[pyo3(signature = (total, scatter, fission, tol=1e-13))]
+fn infinite_medium<'py>(
+    py: Python<'py>,
+    total: Vec<f64>,
+    scatter: Vec<f64>,
+    fission: Vec<f64>,
+    tol: f64,
+) -> PyResult<(f64, Array<'py>, usize)> {
+    let n = total.len();
+    if scatter.len() != n * n || fission.len() != n * n {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "matrices must be n x n",
+        ));
+    }
+    let (k, phi, it) = py
+        .detach(|| infinite::k_infinity(&total, &scatter, &fission, tol))
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    Ok((k, phi.into_pyarray(py), it))
+}
+
+/// The n-point Gauss-Legendre rule (for parity tests with numpy's leggauss).
+#[pyfunction]
+fn gauss_legendre<'py>(py: Python<'py>, n: usize) -> (Array<'py>, Array<'py>) {
+    let (x, w) = gauss::gauss_legendre(n);
+    (x.into_pyarray(py), w.into_pyarray(py))
+}
+
 /// Correctly rounded sum (port of `math.fsum`, for parity tests).
 #[pyfunction(name = "fsum")]
 fn py_fsum(values: Vec<f64>) -> f64 {
@@ -411,6 +599,11 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(k_constant, m)?)?;
     m.add_function(wrap_pyfunction!(pointwise_table, m)?)?;
     m.add_function(wrap_pyfunction!(py_fsum, m)?)?;
+    m.add_function(wrap_pyfunction!(two_body_kernel, m)?)?;
+    m.add_function(wrap_pyfunction!(two_body_table, m)?)?;
+    m.add_function(wrap_pyfunction!(thermal_table, m)?)?;
+    m.add_function(wrap_pyfunction!(infinite_medium, m)?)?;
+    m.add_function(wrap_pyfunction!(gauss_legendre, m)?)?;
     m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;

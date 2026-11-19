@@ -80,3 +80,46 @@ def group_hat_integrals(
     z: Sequence[float],
     max_ratio: float,
 ) -> tuple[list[int], list[int], list[list[float]]]: ...
+def two_body_kernel(
+    energies: Sequence[float],
+    breaks: Sequence[int],
+    laws: Sequence[int],
+    panels: Sequence[tuple[int, Sequence[float], Sequence[float]]],
+    awr: float,
+    q: float,
+    boundaries: Sequence[float],
+    lmax: int,
+    energy: float,
+) -> Array: ...
+def two_body_table(
+    energies: Sequence[float],
+    breaks: Sequence[int],
+    laws: Sequence[int],
+    panels: Sequence[tuple[int, Sequence[float], Sequence[float]]],
+    awr: float,
+    q: float,
+    boundaries: Sequence[float],
+    lmax: int,
+    seeds: Sequence[float],
+    sigma: object | None = None,
+    adaptive: bool = True,
+    tol: float = ...,
+    atol: float = ...,
+) -> tuple[Array, list[Array]]: ...
+def thermal_table(
+    kind: int,
+    params: Sequence[float],
+    alpha: Sequence[float],
+    beta: Sequence[float],
+    ln_s: Sequence[float],
+    boundaries: Sequence[float],
+    lmax: int,
+    energies: Sequence[float],
+) -> list[Array]: ...
+def infinite_medium(
+    total: Sequence[float],
+    scatter: Sequence[float],
+    fission: Sequence[float],
+    tol: float = ...,
+) -> tuple[float, Array, int]: ...
+def gauss_legendre(n: int) -> tuple[Array, Array]: ...

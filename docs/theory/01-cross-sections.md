@@ -160,7 +160,7 @@ dominated by a handful of low-energy resonances:
 This is why a lattice code has to represent the first few U-238 resonances
 very accurately. In a real fuel pin the flux dips inside each big resonance,
 so the effective capture is much smaller than $RI$ suggests
-(*self-shielding*, chapters 8, 10 and 12). Calculating that effect is a central job of
+(*self-shielding*, chapters 8, 12 and 13). Calculating that effect is a central job of
 lattice physics.
 
 ## Further reading

@@ -22,3 +22,6 @@ target/
 # Built documentation
 docs/build/
 docs/reference
+
+# independent checking tools (make tools)
+tools/

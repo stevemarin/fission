@@ -466,6 +466,24 @@ class GroupLibrary:
         return self.scatter_elastic + self.scatter_inelastic
 
 
+def shape_table(
+    table: PointwiseTable, energies: Sequence[float], shape: Sequence[float]
+) -> PointwiseTable:
+    """sigma(E) F(E) for every reaction, on the union of both grids (within
+    the table's range): the input of `group_library` with a flux shape."""
+    x = np.asarray(table.energies)
+    sx, sf = np.asarray(energies), np.asarray(shape)
+    u = np.union1d(x, sx[(sx >= x[0]) & (sx <= x[-1])])
+    f = np.interp(u, sx, sf)
+    return PointwiseTable(
+        u.tolist(),
+        {
+            mt: (np.interp(u, x, np.asarray(v)) * f).tolist()
+            for mt, v in table.xs.items()
+        },
+    )
+
+
 def _fold(
     table: Tabulated1D | None, yield_: Tabulated1D | None, k: np.ndarray, e: float
 ):
@@ -478,12 +496,60 @@ def _transfer(
     f, groups, lmax, seeds, ones, weight, use_rust, x=None, column=None, adaptive=True
 ):
     """Int_g [column] w K(E) for a kernel K(E) -> (lmax+1, G) matrix rows."""
-    kern = build_kernel(f, seeds, tol=1e-3, atol=1e-5, adaptive=adaptive)
+    return _integrate_kernel(
+        build_kernel(f, seeds, tol=1e-3, atol=1e-5, adaptive=adaptive),
+        groups, lmax, ones, weight, use_rust, x, column,
+    )  # fmt: skip
+
+
+def _integrate_kernel(kern, groups, lmax, ones, weight, use_rust, x=None, column=None):
     if x is None:
         x, column = ones
     out = group_integrals(x, [column], weight, groups, kern, use_rust)[:, 0, :]
     g_count = groups.size
     return out.reshape(g_count, lmax + 1, g_count).transpose(1, 0, 2)
+
+
+def _angular_for_rust(dist) -> tuple[list[float], list[int], list[int], list]:
+    """An angular distribution as plain data for the Rust kernels."""
+    if isinstance(dist, AngularDistribution) and dist.grid is None:
+        return [], [], [], []
+    g = dist.grid
+    panels: list[tuple[int, list[float], list[float]]] = []
+    for panel in dist.panels:
+        if isinstance(panel, LegendrePanel):
+            panels.append((0, list(panel.coefficients), []))
+        else:
+            panels.append((1, list(panel.table.x), list(panel.table.y)))
+    return list(g.energies), list(g.breaks), list(g.laws), panels
+
+
+def two_body_kernel_table(
+    dist,
+    awr: float,
+    q: float,
+    groups: GroupStructure,
+    lmax: int,
+    seeds: Sequence[float],
+    sigma: Tabulated1D | None = None,
+    adaptive: bool = True,
+    use_rust: bool = True,
+) -> Kernel:
+    """The two-body kernel tabulated over incident energy (times sigma(E), if
+    given): refined by the midpoint test, or at the seeds only."""
+    points = sorted(set(seeds))
+    if use_rust:
+        from fission import _rust
+
+        z, rows = _rust.two_body_table(
+            *_angular_for_rust(dist), awr, q, list(groups.boundaries), lmax, points,
+            sigma, adaptive, 1e-3, 1e-5,
+        )  # fmt: skip
+        return Kernel(tuple(z.tolist()), np.array(rows))
+    return build_kernel(
+        lambda e: _fold(sigma, None, two_body_kernel(dist, awr, q, groups, lmax, e), e),
+        points, tol=1e-3, atol=1e-5, adaptive=adaptive,
+    )  # fmt: skip
 
 
 def group_library(
@@ -496,12 +562,23 @@ def group_library(
     temperature: float = 0.0,
     lmax: int = 3,
     use_rust: bool = True,
+    flux_shape: tuple[Sequence[float], Sequence[float]] | None = None,
 ) -> GroupLibrary:
-    """Multigroup constants from a (Doppler-broadened) pointwise table."""
+    """Multigroup constants from a (Doppler-broadened) pointwise table.
+
+    flux_shape = (energies, F): the flux inside each group is w(E) F(E)
+    instead of w(E), e.g. the narrow-resonance flux F = 1/Sigma_t(E) of a
+    mixture. The table must then already be multiplied by F (`shape_table`);
+    F itself weights the flux and the smooth (folded) reactions.
+    """
     lo, hi = groups.boundaries[-1], groups.boundaries[0]
     flux_k = Kernel.constant(lo, hi)
-    ones = ([lo, hi], [1.0, 1.0])
-    flux = group_integrals(*ones[:1], [ones[1]], weight, groups, flux_k, use_rust)[
+    ones = (
+        ([lo, hi], [1.0, 1.0])
+        if flux_shape is None
+        else (list(flux_shape[0]), list(flux_shape[1]))
+    )
+    flux = group_integrals(ones[0], [ones[1]], weight, groups, flux_k, use_rust)[
         :, 0, 0
     ]
     mts = table.mts
@@ -520,9 +597,9 @@ def group_library(
     seeds += [
         b / alpha for b in groups.boundaries if alpha > 0 and lo <= b / alpha <= hi
     ]
-    s_el = _transfer(
-        lambda e: two_body_kernel(ad, awr, 0.0, groups, lmax, e).ravel(),
-        groups, lmax, seeds, ones, weight, use_rust, table.energies, table.xs[2],
+    s_el = _integrate_kernel(
+        two_body_kernel_table(ad, awr, 0.0, groups, lmax, seeds, use_rust=use_rust),
+        groups, lmax, ones, weight, use_rust, table.energies, table.xs[2],
     ) / flux[None, :, None]  # fmt: skip
 
     # inelastic and (n,xn): smooth MF3 cross sections folded into the kernels
@@ -543,10 +620,18 @@ def group_library(
         level_seeds = _seeds(groups, thr, hi, 4)
         if isinstance(dist, AngularDistribution | TwoBody) and dist.grid is not None:
             level_seeds += [e for e in dist.grid.energies if thr <= e <= hi]
-        s_in += _transfer(
-            lambda e, d=dist, q=cs.qi, t=cs.table: _fold(t, None, two_body_kernel(d, awr, q, groups, lmax, e), e),
-            groups, lmax, level_seeds, ones, weight, use_rust, adaptive=False,
-        )  # fmt: skip
+        kern = two_body_kernel_table(
+            dist,
+            awr,
+            cs.qi,
+            groups,
+            lmax,
+            level_seeds,
+            cs.table,
+            adaptive=False,
+            use_rust=use_rust,
+        )
+        s_in += _integrate_kernel(kern, groups, lmax, ones, weight, use_rust)
     for mf, mt in sorted(ev.sections):
         if mf != 6 or mt == 18 or 51 <= mt <= 90 or mt not in ev.reactions:
             continue

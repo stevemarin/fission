@@ -191,11 +191,16 @@ $$
 Only the $A_{g,j}$ see the fine grid. On each piece of the merged grid
 $\sigma$ and $h_j$ are linear, so the piece needs four moments of $w$
 (8-point Gauss–Legendre, pieces at most 20% wide in energy), shared by every
-reaction. This loop is the one part ported to Rust. The kernel grids are
-refined by the midpoint test where the kernel is a formula (elastic
-scattering), and placed at the data's own incident energies where the data
-are tabulated and linear in between (spectra, continuum, discrete levels).
-A U-235 or U-238 library at one temperature takes about 15–25 s.
+reaction. The kernel grids are refined by the midpoint test where the
+kernel is a formula (elastic scattering), and placed at the data's own
+incident energies where the data are tabulated and linear in between
+(spectra, continuum, discrete levels).
+
+The hat integrals and the two-body kernels (elastic and discrete levels,
+with their adaptive grids, on all cores) run in Rust; the continuum and
+fission kernels stay in Python, where they cost about a second. A U-238
+library at one temperature takes about 1.3 s (17 s with the Python
+kernels), and the two agree to $10^{-10}$, with identical adaptive grids.
 
 **Checks.**
 
@@ -207,7 +212,9 @@ A U-235 or U-238 library at one temperature takes about 15–25 s.
 * Below the $(n,2n)$ threshold the level-by-level and continuum inelastic
   matrices add up to the evaluated total inelastic cross section MT4 (to
   0.2% in coarse groups, five digits at 1–2 MeV in XMAS-172).
-* Rust and Python hat integrals agree to $10^{-12}$.
+* Rust and Python hat integrals agree to $10^{-12}$; the two-body kernels
+  to $10^{-11}$, and Rust's Gauss–Legendre rules (any order, by Newton's
+  method) agree with numpy's to $10^{-14}$.
 
 Writing these checks found two bugs in earlier code. A histogram
 distribution returned its second-to-last value at its final point, which
@@ -227,5 +234,6 @@ $\ln(b/a)$ must be computed as $\operatorname{log1p}((b-a)/a)$.
   [`weights.py`](../../src/fission/processing/weights.py),
   [`groupr.py`](../../src/fission/processing/groupr.py) (kernels and
   integration), [`groupr.rs`](../../rust/src/groupr.rs) (Rust hat
-  integrals), [`library.py`](../../src/fission/processing/library.py)
+  integrals), [`transfer.rs`](../../rust/src/transfer.rs) (Rust two-body
+  kernels), [`gauss.rs`](../../rust/src/gauss.rs), [`library.py`](../../src/fission/processing/library.py)
   (cache; `make library NUC=U238`, `make groups`).

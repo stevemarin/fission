@@ -778,6 +778,70 @@ def fig_thermal_matrix():
     save(fig, "thermal_matrix")
 
 
+# ---------------------------------------------------------------- chapter 12
+def _pincell(shielding):
+    from fission.pincell.run import run
+
+    return run("1A", shielding)
+
+
+def fig_pincell_spectrum():
+    edges = np.array(XMAS_172.boundaries[::-1])
+    du = np.array([XMAS_172.lethargy_width(g) for g in range(XMAS_172.size)])
+    fig, ax = plt.subplots(figsize=(7.0, 4.0))
+    for shielding, color, label in (
+        ("none", C[1], "infinitely dilute"),
+        ("nr", C[0], "self-shielded (NR)"),
+    ):
+        sol = _pincell(shielding)
+        ax.stairs((sol.flux / du)[::-1], edges, color=color, lw=1.2, label=label)
+    ax.set(
+        xscale="log",
+        xlabel="E (eV)",
+        ylabel="flux per unit lethargy (per fission neutron)",
+        xlim=(1e-4, 2e7),
+        title="Homogenized VERA 1A pin cell: infinite-medium spectrum",
+    )
+    ax.legend()
+    save(fig, "pincell_spectrum")
+
+
+def fig_pincell_capture():
+    edges = np.array(XMAS_172.boundaries[::-1])
+    du = np.array([XMAS_172.lethargy_width(g) for g in range(XMAS_172.size)])
+    fig, ax = plt.subplots(figsize=(7.0, 4.0))
+    for shielding, color, label in (
+        ("none", C[1], "infinitely dilute"),
+        ("nr", C[0], "self-shielded (NR)"),
+    ):
+        sol = _pincell(shielding)
+        m = sol.mixture
+        ((c, lib),) = [
+            (c, lib)
+            for c, lib in zip(m.components, m.libraries, strict=True)
+            if c.nuclide == "U238"
+        ]
+        rate = c.density * lib.sigma[102] * sol.flux
+        ax.stairs(
+            (rate / du)[::-1],
+            edges,
+            color=color,
+            lw=1.2,
+            label=f"{label}: {rate.sum():.3f} per fission neutron",
+        )
+    ax.set(
+        xscale="log",
+        yscale="log",
+        xlabel="E (eV)",
+        ylabel="U-238 capture per unit lethargy",
+        xlim=(1e-3, 2e5),
+        ylim=(1e-4, None),
+        title="Where U-238 captures neutrons (VERA 1A, homogenized)",
+    )
+    ax.legend(fontsize=8)
+    save(fig, "pincell_capture")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -804,5 +868,7 @@ if __name__ == "__main__":
         fig_thermal_xs,
         fig_thermal_spectra,
         fig_thermal_matrix,
+        fig_pincell_spectrum,
+        fig_pincell_capture,
     ):
         make()

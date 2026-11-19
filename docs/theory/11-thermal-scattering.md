@@ -155,6 +155,8 @@ temperature).
 * [[Bell & Glasstone](#ref-bell)] ch. 7: neutron thermalization (free).
 * Code: [`sab.py`](../../src/fission/endf/distributions/sab.py) (MF7
   reader), [`thermal.py`](../../src/fission/processing/thermal.py) (models,
-  kernel, `with_thermal`). Libraries: `make groups` builds free-gas libraries
+  kernel, `with_thermal`), and the Rust port
+  [`thermal.rs`](../../rust/src/thermal.rs), which evaluates the kernels on
+  all cores and agrees with the numpy reference to $10^{-15}$. Libraries: `make groups` builds free-gas libraries
   for all nuclides and H in H$_2$O at 293.6, 600 and 900 K;
   `make library NUC=H1` shows one.

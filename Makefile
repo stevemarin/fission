@@ -19,10 +19,24 @@ PIN_THERMAL  := HinH2O OinUO2 UinUO2
 TEMPS        ?= 293.6 600 900 1200
 T            ?= 293.6
 WATER_TEMPS  ?= 293.6 600 900
+CASES        ?= 1A 1B 1C 1D
+SHIELD       ?= nr
+
+# Independent checking tools (NJOY, OpenMC): prebuilt conda-forge packages in
+# an isolated micromamba environment under tools/ (no sudo; separate from uv).
+TOOLS        := tools
+MAMBA_VER    := 2.10.0-0
+MAMBA        := $(TOOLS)/bin/micromamba
+MAMBA_ROOT   := $(TOOLS)/mamba
+TOOLS_ENV    := $(TOOLS)/env
+NJOY_VER     := 2016.78
+OPENMC_VER   := 0.16.0
+IN_TOOLS     := $(MAMBA) run -r $(MAMBA_ROOT) -p $(TOOLS_ENV)
+MAMBA_URL    := https://github.com/mamba-org/micromamba-releases/releases/download/$(MAMBA_VER)/micromamba-linux-64
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        data tables doppler-tables groups clean-tables show scan rm doppler secondary library docs figures clean
+        tools njoy openmc tools-check clean-tools data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -31,6 +45,34 @@ help:  ## list targets
 # ---------------------------------------------------------------- environment
 sync:  ## install/update the project environment from uv.lock
 	$(UV) sync
+
+# ---------------------------------------------------------------- checking tools
+$(MAMBA):
+	@mkdir -p $(TOOLS)/bin
+	curl -fsSL -o $@.tmp $(MAMBA_URL)
+	curl -fsSL -o $@.sha256 $(MAMBA_URL).sha256
+	echo "$$(cat $@.sha256)  $@.tmp" | sha256sum -c -
+	chmod +x $@.tmp
+	mv $@.tmp $@
+
+$(TOOLS_ENV): | $(MAMBA)
+	$(MAMBA) create -y -q -r $(MAMBA_ROOT) -p $(TOOLS_ENV)
+
+tools: njoy openmc tools-check  ## install NJOY and OpenMC into tools/ (independent checks only)
+
+njoy: | $(TOOLS_ENV)  ## install NJOY2016 (conda-forge njoy2016) into tools/env
+	$(MAMBA) install -y -q -r $(MAMBA_ROOT) -p $(TOOLS_ENV) -c conda-forge --override-channels njoy2016=$(NJOY_VER)
+
+openmc: | $(TOOLS_ENV)  ## install OpenMC (executable + Python API, conda-forge) into tools/env
+	$(MAMBA) install -y -q -r $(MAMBA_ROOT) -p $(TOOLS_ENV) -c conda-forge --override-channels openmc=$(OPENMC_VER) njoy2016=$(NJOY_VER)
+
+tools-check:  ## show the NJOY and OpenMC versions installed in tools/env
+	@printf 'stop\n' | $(IN_TOOLS) njoy | grep -i -m1 'njoy'
+	@$(IN_TOOLS) openmc --version | head -2
+	@$(IN_TOOLS) python -c "import openmc; print('OpenMC Python API', openmc.__version__)"
+
+clean-tools:  ## remove tools/ (micromamba, NJOY, OpenMC)
+	rm -rf tools
 
 # ---------------------------------------------------------------- quality
 test:  ## run all tests (ARGS="..." passes extra pytest options)
@@ -82,6 +124,9 @@ doppler-tables:  ## build (or load) Doppler-broadened tables (TEMPS="293.6 600 9
 groups:  ## build (or load) multigroup libraries, XMAS-172, free gas + H in H2O
 	$(PY) -m fission.processing.library $(PIN_NUCLIDES) --temps $(TEMPS) --quiet
 	$(PY) -m fission.processing.library H1 --thermal HinH2O --temps $(WATER_TEMPS) --quiet
+
+pincell:  ## k-infinity of the homogenized VERA problem 1 cell (CASES="1A" SHIELD=nr|none)
+	$(PY) -m fission.pincell.run $(CASES) --shielding $(SHIELD)
 
 clean-tables:  ## delete all cached pointwise, broadened and multigroup tables
 	rm -rf endf-data/pointwise endf-data/doppler endf-data/groups

@@ -31,7 +31,7 @@ $$
 The tables are first built at **0 K** (no thermal motion of the target
 nuclei), then Doppler-broadened to the temperatures of a reactor. The
 unresolved resonance range, self-shielding and thermal scattering come next;
-chapter 12 previews them.
+chapter 13 previews them.
 
 ## How to read these notes {.unnumbered}
 
@@ -45,7 +45,8 @@ chapter 12 previews them.
 * Chapter 9 turns to what reactions emit: neutrons per fission, spectra and
   angular distributions.
 * Chapter 10 condenses all of it into multigroup constants for transport,
-  and chapter 11 adds thermal scattering.
+  and chapter 11 adds thermal scattering. Chapter 12 puts them to use: the
+  spectrum and k-infinity of a homogenized PWR pin cell.
 * Sections marked **(derivation)** can be skipped on a first reading; the
   results they derive are stated before them.
 

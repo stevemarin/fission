@@ -9,13 +9,13 @@ pub const PANEL_WIDTH: f64 = 0.5;
 // Gauss-Legendre rules on [-1, 1], identical to GAUSS_RULES in doppler.py
 const NODES_2: [f64; 2] = [-0.5773502691896257, 0.5773502691896257];
 const WEIGHTS_2: [f64; 2] = [1.0, 1.0];
-const NODES_4: [f64; 4] = [
+pub const NODES_4: [f64; 4] = [
     -0.8611363115940526,
     -0.33998104358485626,
     0.33998104358485626,
     0.8611363115940526,
 ];
-const WEIGHTS_4: [f64; 4] = [
+pub const WEIGHTS_4: [f64; 4] = [
     0.34785484513745357,
     0.6521451548625464,
     0.6521451548625464,
