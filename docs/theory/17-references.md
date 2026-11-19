@@ -96,6 +96,16 @@ source or a standard text.
   eigenvalues (Table P1-5). <https://corephysics.com/docs/CASL-U-2012-0131-004.pdf>
   **(free)**. Inputs: <https://github.com/CASL/VERAin> **(free)**
 
+- []{#ref-c5g7}**[C5G7]** OECD/NEA Expert Group on 3-D Radiation Transport
+  Benchmarks (reference MCNP solution: M. A. Smith, N. Tsoulfanidis,
+  R. N. Blomquist, E. E. Lewis, Argonne), *Benchmark on Deterministic
+  Transport Calculations Without Spatial Homogenisation: A 2-D/3-D MOX Fuel
+  Assembly Benchmark*, NEA/NSC/DOC(2003)16, OECD/NEA (2003). Geometry
+  (Chapter 2, Figures 1–3), seven-group cross sections (Appendix A,
+  Table 1), reference MCNP results (Tables 3–5).
+  <https://www.oecd-nea.org/upload/docs/application/pdf/2019-12/nsc-doc2003-16.pdf>
+  **(free)**
+
 ## Software {.unnumbered}
 
 - []{#ref-armi}**[ARMI]** TerraPower, *ARMI: the Advanced Reactor Modeling

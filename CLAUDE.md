@@ -34,6 +34,7 @@ make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|nr; MODEL=vera-p1)
 make model MODEL=vera-p1 STATE=1A  # check a model file, print number densities
 make tracks MODEL=vera-p1 AZIM=64 SPACING=0.01  # cyclic tracks + ray tracing, area check
+make moc CORE=c5g7 AZIM=32 SPACING=0.05  # MOC eigenvalue + pin powers vs C5G7 reference
 make groups       # XMAS-172 libraries, free-gas thermal + H in H2O (endf-data/groups/); make library NUC=U238 T=293.6
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
@@ -72,7 +73,15 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   (`cyclic_tracks`: OpenMOC-style cyclic angles/spacing, weights, sweep
   links fwd/bwd, reflective or vacuum per side), `trace.py` (segments via
   sorted crossings + midpoint classification; `track_areas`). Rust
-  `raytrace.rs` is bitwise identical to Python.
+  `raytrace.rs` is bitwise identical to Python. `moc.py` (B2): flat-source
+  isotropic MOC, Gauss-Legendre polar, area-corrected segments, power
+  iteration stopping on the extrapolated error d rho/(1-rho); Rust
+  `moc.rs` sweep (threaded over tracks). `run.py`: core driver + C5G7
+  reference (Tables 3-5). `Geometry.from_core` flattens the core map.
+- `models/c5g7.toml` + `c5g7-xs.toml`: macroscopic materials (`macroscopic =`,
+  `[model] multigroup =` library file), pins without rings (`radii = []`),
+  `fill`/`size` lattices, `[core] boundary` per side. Layout read from the
+  spec's Figure 3 by pixel classification; XS parsed from its text.
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -99,7 +108,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `16-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `17-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -154,7 +163,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing; theory docs ch. 0–16. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7); theory docs ch. 0–17. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -165,8 +174,9 @@ self-shielding (C1).
   - A5 infinite-medium spectrum + k∞ of the homogenized VERA 1 cell (done)
 - **B: transport**
   - B1 pin-cell geometry + cyclic ray tracing (done)
-  - **B2 MOC, verified on C5G7 7-group data (next)**
-  - B3 Rust sweep
+  - B2 MOC, verified on C5G7 7-group data (done; Rust sweep included)
+  - **B3 CMFD acceleration (next): unaccelerated power iteration needs
+    thousands of sweeps on C5G7**
 - **C: coupling**
   - C1 self-shielding (equivalence/Bondarenko + Dancoff, or subgroup)
   - C2 real pin cell vs VERA problem 1

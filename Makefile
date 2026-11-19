@@ -23,8 +23,9 @@ CASES        ?= 1A 1B 1C 1D
 SHIELD       ?= nr
 MODEL        ?= vera-p1
 STATE        ?= 1A
+CORE         ?= c5g7
 AZIM         ?= 64
-SPACING      ?= 0.01
+SPACING      ?= 0.05
 
 # Independent checking tools (NJOY, OpenMC): prebuilt conda-forge packages in
 # an isolated micromamba environment under tools/ (no sudo; separate from uv).
@@ -40,7 +41,7 @@ MAMBA_URL    := https://github.com/mamba-org/micromamba-releases/releases/downlo
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        tools njoy openmc tools-check clean-tools model tracks data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
+        tools njoy openmc tools-check clean-tools model tracks moc data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -131,6 +132,9 @@ groups:  ## build (or load) multigroup libraries, XMAS-172, free gas + H in H2O
 
 pincell:  ## k-infinity of a homogenized model lattice (CASES="1A" SHIELD=nr|none MODEL=vera-p1)
 	$(PY) -m fission.pincell.run $(CASES) --shielding $(SHIELD) --model $(MODEL)
+
+moc:  ## MOC k-eigenvalue of a model core vs its reference (CORE=c5g7 AZIM=32 SPACING=0.05)
+	$(PY) -m fission.transport.run $(CORE) --azim $(AZIM) --spacing $(SPACING)
 
 tracks:  ## cyclic tracks + ray tracing of a model lattice (MODEL=vera-p1 AZIM=64 SPACING=0.01)
 	$(PY) -m fission.transport $(MODEL) --azim $(AZIM) --spacing $(SPACING)

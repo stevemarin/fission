@@ -135,3 +135,18 @@ def trace_tracks(
     x1: Array,
     y1: Array,
 ) -> tuple[npt.NDArray[np.int64], Array, npt.NDArray[np.int64]]: ...
+def moc_sweep(
+    region: npt.NDArray[np.int64],
+    length: Array,
+    start: npt.NDArray[np.int64],
+    next_fwd: npt.NDArray[np.int64],
+    fwd_forward: npt.NDArray[np.int64],
+    next_bwd: npt.NDArray[np.int64],
+    bwd_forward: npt.NDArray[np.int64],
+    weights: Array,
+    sin: Array,
+    sigma_t: Array,
+    source: Array,
+    psi_in: Array,
+    groups: int,
+) -> tuple[Array, Array, float]: ...

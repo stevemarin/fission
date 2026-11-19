@@ -7,7 +7,7 @@ spatial shape is the job of a transport solver. This project's solver is
 the **method of characteristics** (MOC). This chapter builds its geometric
 foundation: the mesh of regions, the straight lines (tracks) along which MOC
 integrates, and the segments into which the regions cut those lines. The
-solver itself is the next step (B2).
+solver itself is chapter 15.
 
 ## Why straight lines
 
@@ -119,7 +119,7 @@ angle $\pi - \varphi_a$ gets the same weight.
 These tracks are two-dimensional. A real neutron also moves out of the
 plane, at a polar angle $\theta$, and travels $\ell/\sin\theta$ along a 2D
 segment of length $\ell$. That is handled by a polar quadrature in the
-solver (B2); the segments do not change.
+solver (chapter 15); the segments do not change.
 
 ## Ray tracing
 
@@ -162,7 +162,7 @@ same region are merged.
   0.001 cm): a thin ring is crossed by few tracks, whose positions happen to
   favour or miss it, and these errors partly cancel between angles. MOC codes usually correct the remaining error by
   rescaling the segment lengths of each region so that the track areas match
-  the exact ones. The solver will do the same.
+  the exact ones. The solver of chapter 15 does this.
 * **Links.** At every link, the next sweep starts at the point where the
   last one left, with the direction mirrored. Every sweep is entered from
   exactly one other, so the links form a permutation, and its cycles close.

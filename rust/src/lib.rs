@@ -11,6 +11,7 @@ pub mod gauss;
 pub mod groupr;
 pub mod infinite;
 pub mod mlbw;
+pub mod moc;
 pub mod pointwise;
 pub mod raytrace;
 pub mod reconstruct;
@@ -524,6 +525,62 @@ fn trace_tracks<'py>(
     ))
 }
 
+/// One MOC sweep over all tracks (port of `transport.moc.sweep`):
+/// returns (tally per region x group, next incoming fluxes, leakage).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn moc_sweep<'py>(
+    py: Python<'py>,
+    region: PyReadonlyArray1<'py, i64>,
+    length: PyReadonlyArray1<'py, f64>,
+    start: PyReadonlyArray1<'py, i64>,
+    next_fwd: PyReadonlyArray1<'py, i64>,
+    fwd_forward: PyReadonlyArray1<'py, i64>,
+    next_bwd: PyReadonlyArray1<'py, i64>,
+    bwd_forward: PyReadonlyArray1<'py, i64>,
+    weights: PyReadonlyArray1<'py, f64>,
+    sin: PyReadonlyArray1<'py, f64>,
+    sigma_t: PyReadonlyArray1<'py, f64>,
+    source: PyReadonlyArray1<'py, f64>,
+    psi_in: PyReadonlyArray1<'py, f64>,
+    groups: usize,
+) -> PyResult<(Array<'py>, Array<'py>, f64)> {
+    let tracks = moc::Tracks {
+        region: region.as_slice()?,
+        length: length.as_slice()?,
+        start: start.as_slice()?,
+        next_fwd: next_fwd.as_slice()?,
+        fwd_forward: fwd_forward.as_slice()?,
+        next_bwd: next_bwd.as_slice()?,
+        bwd_forward: bwd_forward.as_slice()?,
+        weights: weights.as_slice()?,
+        sin: sin.as_slice()?,
+        groups,
+    };
+    let n = tracks.start.len().saturating_sub(1);
+    let (sigma_t, source, psi_in) = (sigma_t.as_slice()?, source.as_slice()?, psi_in.as_slice()?);
+    let bad = |m: &str| Err(pyo3::exceptions::PyValueError::new_err(m.to_string()));
+    if groups == 0 || sigma_t.len() % groups != 0 || source.len() != sigma_t.len() {
+        return bad("sigma_t and source must be regions x groups");
+    }
+    if tracks.region.len() != tracks.length.len()
+        || tracks.next_fwd.len() != n
+        || tracks.fwd_forward.len() != n
+        || tracks.next_bwd.len() != n
+        || tracks.bwd_forward.len() != n
+        || tracks.weights.len() != n * tracks.sin.len()
+        || psi_in.len() != n * 2 * tracks.sin.len() * groups
+    {
+        return bad("track arrays have inconsistent lengths");
+    }
+    let regions = (sigma_t.len() / groups) as i64;
+    if tracks.region.iter().any(|&r| r < 0 || r >= regions) {
+        return bad("segment region out of range");
+    }
+    let (tally, next, leakage) = py.detach(|| moc::sweep(&tracks, sigma_t, source, psi_in));
+    Ok((tally.into_pyarray(py), next.into_pyarray(py), leakage))
+}
+
 /// The n-point Gauss-Legendre rule (for parity tests with numpy's leggauss).
 #[pyfunction]
 fn gauss_legendre<'py>(py: Python<'py>, n: usize) -> (Array<'py>, Array<'py>) {
@@ -662,6 +719,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(infinite_medium, m)?)?;
     m.add_function(wrap_pyfunction!(gauss_legendre, m)?)?;
     m.add_function(wrap_pyfunction!(trace_tracks, m)?)?;
+    m.add_function(wrap_pyfunction!(moc_sweep, m)?)?;
     m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;

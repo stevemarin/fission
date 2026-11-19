@@ -899,6 +899,45 @@ def fig_tracks():
     save(fig, "tracks")
 
 
+# ---------------------------------------------------------------- chapter 15
+def fig_c5g7():
+    from fission.model import load_model
+    from fission.transport import Geometry, cyclic_tracks
+    from fission.transport.moc import build, solve
+    from fission.transport.run import C5G7_REFERENCE, pin_powers
+
+    model = load_model("c5g7")
+    rings = {m: 1 for m in ("uo2", "mox43", "mox70", "mox87", "guide", "chamber")}
+    g = Geometry.from_core(model, rings, sectors=4)
+    assert model.core is not None
+    tracks = cyclic_tracks(g.width, g.height, 16, 0.1, model.core.boundary)
+    sol = solve(build(model, g, tracks, n_polar=2), tol_k=1e-7, tol_source=1e-6)
+    p = pin_powers(sol, model)[:34, :34]
+    fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.0))
+    im = axes[0].imshow(np.ma.masked_invalid(p), cmap="viridis", origin="upper",
+                        extent=(0, 34 * 1.26, 34 * 1.26, 0))  # fmt: skip
+    axes[0].axhline(17 * 1.26, color="w", lw=0.8)
+    axes[0].axvline(17 * 1.26, color="w", lw=0.8)
+    for x, y, label in [(10.7, 1.3, "UO$_2$"), (32.1, 1.3, "MOX"), (10.7, 22.7, "MOX"),
+                        (32.1, 22.7, "UO$_2$")]:  # fmt: skip
+        axes[0].text(x, y, label, color="w", ha="center", va="center", fontsize=8,
+                     bbox={"fc": "k", "ec": "none", "alpha": 0.6, "pad": 1.5})  # fmt: skip
+    axes[0].set_title("pin powers (fuel pins, average 1)", fontsize=10)
+    axes[0].set_xlabel("x (cm)")
+    axes[0].set_ylabel("distance from the top (cm)")
+    axes[0].grid(False)
+    fig.colorbar(im, ax=axes[0], fraction=0.046)
+    h = np.array(sol.history)
+    axes[1].semilogy(np.arange(1, len(h)), np.abs(h[:-1] - h[-1]) * 1e5, color=C[0])
+    axes[1].axhline(abs(sol.k - C5G7_REFERENCE["k"]) * 1e5, color=C[1], ls="--",
+                    label="this tracking vs MCNP reference")  # fmt: skip
+    axes[1].set_xlabel("iteration")
+    axes[1].set_ylabel("|k - k$_{\\mathrm{final}}$| (pcm)")
+    axes[1].set_title(f"power iteration: {sol.iterations} sweeps", fontsize=10)
+    axes[1].legend(fontsize=8)
+    save(fig, "c5g7")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -928,5 +967,6 @@ if __name__ == "__main__":
         fig_pincell_spectrum,
         fig_pincell_capture,
         fig_tracks,
+        fig_c5g7,
     ):
         make()

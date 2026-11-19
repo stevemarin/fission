@@ -152,6 +152,59 @@ class Geometry:
         """Exact area of every FSR (cm^2)."""
         return np.concatenate([c.areas(self.pitch) for c in self.cells])
 
+    def cell_of_regions(self) -> np.ndarray:
+        """Index of the cell that contains each FSR."""
+        return np.repeat(np.arange(len(self.cells)), [c.regions for c in self.cells])
+
+    @classmethod
+    def from_core(
+        cls,
+        model: Model,
+        rings: dict[str, int] | None = None,
+        sectors: int = 8,
+        z: float | None = None,
+    ) -> Geometry:
+        """FSR mesh of the whole core map, cut at height z (default: mid-height).
+
+        Every assembly's lattice must be exactly one assembly pitch wide and
+        all lattices must share one pin pitch, so that the core is one grid
+        of cells. The core map is unfolded to the full map first.
+        """
+        core = model.core
+        if core is None:
+            raise ValueError(f"model {model.name!r} has no core")
+        full = core.full_map()
+        names = {a for row in full for a in row if a is not None}
+        if any(a is None for row in full for a in row):
+            raise ValueError(
+                "core positions outside the core ('.') are not supported yet"
+            )
+        height = model.assemblies[next(iter(names))].height
+        level = height / 2 if z is None else z
+        slices: dict[str, Geometry] = {}
+        for a in names:
+            bottom = 0.0
+            for seg in model.assemblies[a].segments:
+                if bottom <= level < bottom + seg.height:
+                    slices[a] = cls.from_lattice(model, seg.lattice, rings, sectors)
+                bottom += seg.height
+        pitches = {g.pitch for g in slices.values()}
+        if len(pitches) != 1:
+            raise ValueError(f"lattices at z = {level:g} cm have different pin pitches")
+        for a, g in slices.items():
+            if abs(g.width - core.assembly_pitch) > 1e-9 * core.assembly_pitch:
+                raise ValueError(f"assembly {a!r} is {g.width:g} cm wide, not the "
+                                 f"assembly pitch {core.assembly_pitch:g} cm")  # fmt: skip
+        n = slices[next(iter(names))].nx  # pins per assembly side
+        rows, cols = len(full), len(full[0])
+        cells = []
+        for iy in range(rows * n):  # from the bottom; the map's rows run from the top
+            a_row = full[rows - 1 - iy // n]
+            for ix in range(cols * n):
+                g = slices[a_row[ix // n]]  # type: ignore[index]
+                cells.append(g.cells[(iy % n) * n + ix % n])
+        return cls(pitches.pop(), cols * n, rows * n, tuple(cells))
+
     @classmethod
     def from_lattice(
         cls,

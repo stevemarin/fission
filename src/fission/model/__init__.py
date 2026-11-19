@@ -8,6 +8,7 @@ homogenize(model, "cell", "1A")          # area-weighted components
 from .homogenize import Component, homogenize, material_areas
 from .load import MODELS_DIR, ModelError, load_model, parse
 from .materials import atomic_mass, number_densities
+from .multigroup import MacroXS, load_multigroup
 from .spec import (
     Assembly,
     AxialSegment,
@@ -29,6 +30,7 @@ __all__ = [
     "Core",
     "Isotopics",
     "Lattice",
+    "MacroXS",
     "Material",
     "Model",
     "ModelError",
@@ -38,6 +40,7 @@ __all__ = [
     "atomic_mass",
     "homogenize",
     "load_model",
+    "load_multigroup",
     "material_areas",
     "number_densities",
     "parse",

@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 from .materials import element_of
+from .multigroup import LibraryError, MacroXS, load_multigroup
 from .spec import (
+    SIDES,
     Assembly,
     AxialSegment,
     Core,
@@ -166,7 +168,12 @@ def _element_isotopics(m: _Table) -> dict[str, Isotopics]:
 
 
 def _material(name: str, m: _Table) -> Material:
-    temperature: Any = m.string("temperature", choices=("fuel", "moderator"))
+    if m.has("macroscopic"):
+        temperature: Any = m.string("temperature", "moderator", ("fuel", "moderator"))
+        macroscopic = m.string("macroscopic")
+        m.finish()  # anything else (densities, formula, ...) is an unknown key here
+        return Material(name, temperature, macroscopic=macroscopic)
+    temperature = m.string("temperature", choices=("fuel", "moderator"))
     thermal = None
     if m.has("thermal"):
         t = m.table("thermal")
@@ -306,11 +313,23 @@ def _lattice(
         t.finish()
         return Lattice(name, "square", material=material)
     pitch = t.number("pitch")
-    legend = _legend(t)
+    if t.has("fill"):
+        for key in ("legend", "map"):
+            if t.has(key):
+                _fail(t.at(key), "not allowed together with 'fill'")
+        fill = t.string("fill")
+        size = t.raw("size")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 1:
+            _fail(t.at("size"), "expected a positive integer (pins per side)")
+        legend: dict[str, str | None] = {"x": fill}
+        t.data["map"] = "\n".join([" ".join(["x"] * size)] * size)
+        t.known.add("size")
+    else:
+        legend = _legend(t)
     for key, pin in legend.items():
-        if pin not in pins:
+        if pin is None or pin not in pins:
             _fail(t.at(f"legend.{key}"), f"unknown pin {pin!r}")
-        if pins[pin].radii[-1] > pitch / 2:
+        if pins[pin].radii and pins[pin].radii[-1] > pitch / 2:
             _fail(t.at(f"legend.{key}"), f"pin {pin!r} (radius {pins[pin].radii[-1]:g} cm) "
                   f"does not fit in the pitch {pitch:g} cm")  # fmt: skip
     grid = _grid(t, legend)
@@ -344,6 +363,12 @@ def _core(
     symmetry = t.string("symmetry", "full")
     _reserved(t.at("symmetry"), symmetry, ("full", "quarter"))
     pitch = t.number("assembly_pitch")
+    boundary = dict.fromkeys(SIDES, "vacuum")
+    if t.has("boundary"):
+        b = t.table("boundary")
+        for side in SIDES:
+            boundary[side] = b.string(side, "vacuum", ("vacuum", "reflective"))
+        b.finish()
     legend = _legend(t)
     for key, a in legend.items():
         if a not in assemblies:
@@ -362,7 +387,7 @@ def _core(
                 _fail(t.at("assembly_pitch"), f"lattice {s.lattice!r} of assembly {a!r} "
                       f"is {width:g} cm wide, more than the assembly pitch {pitch:g} cm")  # fmt: skip
     t.finish()
-    return Core(cast(Any, geometry), cast(Any, symmetry), pitch, grid)
+    return Core(cast(Any, geometry), cast(Any, symmetry), pitch, grid, boundary)
 
 
 def _state(name: str, t: _Table) -> State:
@@ -392,8 +417,11 @@ def _section(top: _Table, key: str) -> _Table:
     return top.table(key, {}) if top.has(key) else _Table({}, key)
 
 
-def parse(data: dict[str, Any]) -> Model:
-    """Build a Model from parsed TOML (a dict), checking everything."""
+def parse(data: dict[str, Any], base: Path | None = None) -> Model:
+    """Build a Model from parsed TOML (a dict), checking everything.
+
+    base: directory that relative paths in the file (``multigroup``) refer to.
+    """
     top = _Table(data, "")
     head = top.table("model")
     fmt = head.raw("format")
@@ -401,6 +429,14 @@ def parse(data: dict[str, Any]) -> Model:
         _fail(head.at("format"), f"this code reads format {FORMAT}, got {fmt!r}")
     name = head.string("name")
     description = head.string("description", "")
+    library: dict[str, MacroXS] = {}
+    if head.has("multigroup"):
+        path = Path(head.string("multigroup"))
+        path = (base or MODELS_DIR) / path if not path.is_absolute() else path
+        try:
+            library = load_multigroup(path)
+        except (OSError, LibraryError) as e:
+            _fail(head.at("multigroup"), str(e))
     head.finish()
 
     sec = _section(top, "materials")
@@ -412,6 +448,11 @@ def parse(data: dict[str, Any]) -> Model:
                     f"materials.{mat.name}.thermal.{nuclide}",
                     "nuclide not in this material",
                 )
+    for mat in materials.values():
+        if mat.macroscopic is not None and mat.macroscopic not in library:
+            have = ", ".join(library) or "none: set [model] multigroup"
+            _fail(f"materials.{mat.name}.macroscopic",
+                  f"{mat.macroscopic!r} is not in the multigroup library (have {have})")  # fmt: skip
     sec = _section(top, "pins")
     pins = {k: _pin(k, sec.table(k), materials) for k in sec.data}
     sec = _section(top, "lattices")
@@ -427,7 +468,9 @@ def parse(data: dict[str, Any]) -> Model:
                 f"materials.{mat.name}.density", '"moderator" needs at least one state'
             )
     top.finish()
-    return Model(name, description, materials, pins, lattices, assemblies, core, states)
+    return Model(
+        name, description, materials, pins, lattices, assemblies, core, states, library
+    )
 
 
 def load_model(path: str | Path) -> Model:
@@ -440,7 +483,7 @@ def load_model(path: str | Path) -> Model:
     try:
         with open(p, "rb") as f:
             data = tomllib.load(f)
-        return parse(data)
+        return parse(data, p.resolve().parent)
     except tomllib.TOMLDecodeError as e:
         raise ModelError(f"{p.name}: {e}") from None
     except ModelError as e:

@@ -70,6 +70,10 @@ def number_densities(
     material: Material, state: State | None = None, mass: MassFunction = atomic_mass
 ) -> dict[str, float]:
     """Atoms per barn-cm of every nuclide of the material at the state."""
+    if material.macroscopic is not None:
+        raise ValueError(
+            f"material {material.name!r} is given by macroscopic cross sections, not nuclides"
+        )
     if material.atom_densities is not None:
         return dict(material.atom_densities)
     assert material.formula is not None and material.isotopics is not None

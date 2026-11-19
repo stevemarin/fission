@@ -17,8 +17,12 @@ temperature and, for the coolant, its density come from the state.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
+
+from .multigroup import MacroXS
+
+SIDES = ("left", "right", "bottom", "top")
 
 type Basis = Literal["atom", "weight"]
 
@@ -33,8 +37,10 @@ class Isotopics:
 
 @dataclass(frozen=True)
 class Material:
-    """A composition, given in one of two ways.
+    """A composition, given in one of three ways.
 
+    * macroscopic: ``macroscopic`` names an entry of the model's multigroup
+      library (group constants given directly, as in C5G7);
     * explicit: ``atom_densities`` in atoms per barn-cm;
     * a compound: mass ``density`` (g/cm3, or "moderator" for the state's
       water density), a chemical ``formula`` (element -> atoms per molecule)
@@ -50,6 +56,7 @@ class Material:
     isotopics: dict[str, Isotopics] | None = None
     soluble_boron: Isotopics | None = None
     thermal: dict[str, str] | None = None  # nuclide -> S(alpha, beta) law
+    macroscopic: str | None = None  # name in the model's multigroup library
 
     def thermal_law(self, nuclide: str) -> str:
         return (self.thermal or {}).get(nuclide, "free-gas")
@@ -113,6 +120,9 @@ class Assembly:
 class Core:
     """Assemblies on a square map; None marks a position outside the core.
 
+    ``boundary`` gives the condition on each side of the mapped region
+    ("reflective" or "vacuum"; default vacuum).
+
     With ``symmetry = "quarter"`` the map is the south-east quadrant: its
     first row and column lie on the symmetry lines (an odd-sized core, with
     the centre assembly in the top-left corner).
@@ -122,6 +132,9 @@ class Core:
     symmetry: Literal["full", "quarter"]
     assembly_pitch: float  # cm
     map: tuple[tuple[str | None, ...], ...]
+    boundary: dict[str, str] = field(
+        default_factory=lambda: dict.fromkeys(SIDES, "vacuum")
+    )
 
     def full_map(self) -> tuple[tuple[str | None, ...], ...]:
         if self.symmetry == "full":
@@ -162,3 +175,4 @@ class Model:
     assemblies: dict[str, Assembly]
     core: Core | None
     states: dict[str, State]
+    multigroup: dict[str, MacroXS] = field(default_factory=dict)  # macroscopic data

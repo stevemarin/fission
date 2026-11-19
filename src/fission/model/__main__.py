@@ -21,7 +21,10 @@ def summary(model: Model, state: str | None = None) -> str:
         rings = ", ".join(
             f"{m} < {r:g}" for m, r in zip(p.materials, p.radii, strict=False)
         )
-        lines.append(f"  pin {p.name}: {rings}, {p.materials[-1]} outside")
+        if p.radii:
+            lines.append(f"  pin {p.name}: {rings}, {p.materials[-1]} outside")
+        else:
+            lines.append(f"  pin {p.name}: {p.materials[-1]} only (no rings)")
     for lat in model.lattices.values():
         if lat.material is not None:
             lines.append(f"  lattice {lat.name}: homogeneous {lat.material}")

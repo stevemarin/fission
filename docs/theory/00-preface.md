@@ -31,7 +31,7 @@ $$
 The tables are first built at **0 K** (no thermal motion of the target
 nuclei), then Doppler-broadened to the temperatures of a reactor. The
 unresolved resonance range, self-shielding and thermal scattering come next;
-chapter 15 previews them.
+chapter 16 previews them.
 
 ## How to read these notes {.unnumbered}
 
@@ -49,7 +49,9 @@ chapter 15 previews them.
   spectrum and k-infinity of a homogenized PWR pin cell.
 * Chapter 13 describes the model file: how a reactor is written down once,
   as data, from materials to the core map. Chapter 14 builds the geometry of
-  the transport solver: flat-source regions, cyclic tracks and ray tracing.
+  the transport solver: flat-source regions, cyclic tracks and ray tracing;
+  chapter 15 solves the transport equation on them (MOC) and checks the
+  result on the C5G7 benchmark.
 * Sections marked **(derivation)** can be skipped on a first reading; the
   results they derive are stated before them.
 

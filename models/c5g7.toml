@@ -1,0 +1,110 @@
+# C5G7: the 2D MOX benchmark. Sixteen assemblies in quarter-core symmetry:
+# here the modelled quarter, 2 x 2 fuel assemblies plus a water reflector.
+#
+# Source: OECD/NEA, "Benchmark on Deterministic Transport
+# Calculations Without Spatial Homogenisation: A 2-D/3-D MOX Fuel Assembly
+# Benchmark", NEA/NSC/DOC(2003)16, OECD/NEA (2003), Chapter 2 and Appendix A:
+#   Figure 1   core layout and boundary conditions (reflective top and left,
+#              vacuum right and bottom); 64.26 x 64.26 cm, assemblies 21.42 cm
+#   Figure 2   pin cell: radius 0.54 cm, pitch 1.26 cm, two compositions
+#   Figure 3   pin compositions (read from the rendered figure by script and
+#              checked: 24 guide tubes and 1 fission chamber per assembly,
+#              64/100/100 pins of 4.3/7.0/8.7% MOX)
+#   Table 1    seven-group cross sections (c5g7-xs.toml)
+# https://www.oecd-nea.org/upload/docs/application/pdf/2019-12/nsc-doc2003-16.pdf
+
+[model]
+format = 1
+name = "C5G7 2D"
+description = "MOX benchmark, quarter core: 2 UO2 + 2 MOX assemblies and water reflector"
+multigroup = "c5g7-xs.toml"
+
+# ---------------------------------------------------------------- materials (Table 1)
+[materials]
+uo2 = { macroscopic = "UO2" }
+mox43 = { macroscopic = "MOX43" }
+mox70 = { macroscopic = "MOX70" }
+mox87 = { macroscopic = "MOX87" }
+chamber = { macroscopic = "fission_chamber" }
+guide = { macroscopic = "guide_tube" }
+moderator = { macroscopic = "moderator" }
+
+# ---------------------------------------------------------------- pins (Figure 2)
+[pins]
+uo2 = { radii = [0.54], materials = ["uo2", "moderator"] }
+mox43 = { radii = [0.54], materials = ["mox43", "moderator"] }
+mox70 = { radii = [0.54], materials = ["mox70", "moderator"] }
+mox87 = { radii = [0.54], materials = ["mox87", "moderator"] }
+chamber = { radii = [0.54], materials = ["chamber", "moderator"] }
+guide = { radii = [0.54], materials = ["guide", "moderator"] }
+water = { radii = [], materials = ["moderator"] }
+
+# ---------------------------------------------------------------- lattices (Figure 3)
+[lattices.uo2]
+pitch = 1.26
+legend = { U = "uo2", G = "guide", F = "chamber" }
+map = """
+U U U U U U U U U U U U U U U U U
+U U U U U U U U U U U U U U U U U
+U U U U U G U U G U U G U U U U U
+U U U G U U U U U U U U U G U U U
+U U U U U U U U U U U U U U U U U
+U U G U U G U U G U U G U U G U U
+U U U U U U U U U U U U U U U U U
+U U U U U U U U U U U U U U U U U
+U U G U U G U U F U U G U U G U U
+U U U U U U U U U U U U U U U U U
+U U U U U U U U U U U U U U U U U
+U U G U U G U U G U U G U U G U U
+U U U U U U U U U U U U U U U U U
+U U U G U U U U U U U U U G U U U
+U U U U U G U U G U U G U U U U U
+U U U U U U U U U U U U U U U U U
+U U U U U U U U U U U U U U U U U
+"""
+
+[lattices.mox]
+pitch = 1.26
+legend = { L = "mox43", M = "mox70", H = "mox87", G = "guide", F = "chamber" }
+map = """
+L L L L L L L L L L L L L L L L L
+L M M M M M M M M M M M M M M M L
+L M M M M G M M G M M G M M M M L
+L M M G M H H H H H H H M G M M L
+L M M M H H H H H H H H H M M M L
+L M G H H G H H G H H G H H G M L
+L M M H H H H H H H H H H H M M L
+L M M H H H H H H H H H H H M M L
+L M G H H G H H F H H G H H G M L
+L M M H H H H H H H H H H H M M L
+L M M H H H H H H H H H H H M M L
+L M G H H G H H G H H G H H G M L
+L M M M H H H H H H H H H M M M L
+L M M G M H H H H H H H M G M M L
+L M M M M G M M G M M G M M M M L
+L M M M M M M M M M M M M M M M L
+L L L L L L L L L L L L L L L L L
+"""
+
+[lattices.reflector]
+pitch = 1.26
+fill = "water"
+size = 17
+
+# ---------------------------------------------------------------- assemblies
+# 2D benchmark: one axial segment (192.78 cm is the 3D fuel height)
+[assemblies]
+UO2 = { axial = [{ lattice = "uo2", height = 192.78 }] }
+MOX = { axial = [{ lattice = "mox", height = 192.78 }] }
+R = { axial = [{ lattice = "reflector", height = 192.78 }] }
+
+# ---------------------------------------------------------------- core (Figure 1)
+[core]
+assembly_pitch = 21.42
+boundary = { left = "reflective", top = "reflective", right = "vacuum", bottom = "vacuum" }
+legend = { U = "UO2", M = "MOX", R = "R" }
+map = """
+U M R
+M U R
+R R R
+"""
