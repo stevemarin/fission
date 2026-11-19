@@ -5,7 +5,8 @@ Chapters 7 and 8 give pointwise tables at any temperature, with averaged
 the data on the neutrons that reactions emit, chapter 10 condenses
 everything into infinitely dilute multigroup constants, chapter 11 adds
 thermal scattering, chapter 12 shields them in a homogeneous mixture, and
-chapter 13 describes the reactor model they are applied to. In
+chapter 13 describes the reactor model they are applied to; chapter 14
+builds the geometry of the transport solver. In
 a real fuel pin, though, fuel and moderator are separated, and the flux has
 spatial as well as energy structure. This chapter previews the next processing
 steps; each will get its own chapter once implemented.

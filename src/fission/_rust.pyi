@@ -123,3 +123,15 @@ def infinite_medium(
     tol: float = ...,
 ) -> tuple[float, Array, int]: ...
 def gauss_legendre(n: int) -> tuple[Array, Array]: ...
+def trace_tracks(
+    pitch: float,
+    nx: int,
+    ny: int,
+    radii: list[list[float]],
+    sectors: list[int],
+    offsets: list[int],
+    x0: Array,
+    y0: Array,
+    x1: Array,
+    y1: Array,
+) -> tuple[npt.NDArray[np.int64], Array, npt.NDArray[np.int64]]: ...

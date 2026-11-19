@@ -842,6 +842,63 @@ def fig_pincell_capture():
     save(fig, "pincell_capture")
 
 
+# ---------------------------------------------------------------- chapter 14
+def fig_tracks():
+    from fission.model import load_model
+    from fission.transport import Geometry, cyclic_tracks
+
+    geometry = Geometry.from_lattice(load_model("vera-p1"), "cell", rings={"fuel": 3})
+    cell = geometry.cells[0]
+    pitch = geometry.pitch
+    colours = {
+        "fuel": "#f2c48d",
+        "gap": "#ffffff",
+        "clad": "#b9b9b9",
+        "moderator": "#bcd7ee",
+    }
+    fig, axes = plt.subplots(1, 2, figsize=(8.0, 4.0))
+
+    def draw_cell(ax):
+        ax.add_patch(
+            plt.Rectangle((0, 0), pitch, pitch, fc=colours["moderator"], ec="k", lw=0.8)
+        )
+        for r, m in reversed(list(zip(cell.radii, cell.materials, strict=False))):
+            ax.add_patch(
+                plt.Circle((pitch / 2, pitch / 2), r, fc=colours[m], ec="k", lw=0.5)
+            )
+        for k in range(cell.sectors):
+            theta = 2 * math.pi * k / cell.sectors
+            c, s = math.cos(theta), math.sin(theta)
+            reach = (pitch / 2) / max(abs(c), abs(s))
+            ax.plot([pitch / 2, pitch / 2 + reach * c], [pitch / 2, pitch / 2 + reach * s],
+                    color="k", lw=0.5)  # fmt: skip
+        ax.set_xlim(-0.02, pitch + 0.02)
+        ax.set_ylim(-0.02, pitch + 0.02)
+        ax.set_aspect("equal")
+        ax.grid(False)
+        ax.set_xlabel("x (cm)")
+
+    draw_cell(axes[0])
+    axes[0].set_ylabel("y (cm)")
+    axes[0].set_title(f"{geometry.regions} flat-source regions", fontsize=10)
+    draw_cell(axes[1])
+    tracks = cyclic_tracks(pitch, pitch, 8, 0.12)
+    for t in range(len(tracks)):
+        axes[1].plot([tracks.x0[t], tracks.x1[t]], [tracks.y0[t], tracks.y1[t]],
+                     color="#555555", lw=0.4, alpha=0.7)  # fmt: skip
+    for t, _ in tracks.cycle(0):
+        axes[1].plot(
+            [tracks.x0[t], tracks.x1[t]],
+            [tracks.y0[t], tracks.y1[t]],
+            color=C[1],
+            lw=1.4,
+        )
+    axes[1].set_title(
+        f"{len(tracks)} cyclic tracks, 8 directions; one cycle", fontsize=10
+    )
+    save(fig, "tracks")
+
+
 if __name__ == "__main__":
     for make in (
         fig_h1_capture,
@@ -870,5 +927,6 @@ if __name__ == "__main__":
         fig_thermal_matrix,
         fig_pincell_spectrum,
         fig_pincell_capture,
+        fig_tracks,
     ):
         make()

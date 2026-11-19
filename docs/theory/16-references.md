@@ -103,6 +103,17 @@ source or a standard text.
   (Apache-2.0). <https://github.com/terrapower/armi>,
   documentation <https://terrapower.github.io/armi/> **(free)**
 
+- []{#ref-openmoc}**[OpenMOC]** W. Boyd, S. Shaner, L. Li, B. Forget,
+  K. Smith, "The OpenMOC method of characteristics neutral particle
+  transport code", *Annals of Nuclear Energy* **68**, 43–52 (2014).
+  <https://doi.org/10.1016/j.anucene.2013.12.012> **(not free)**
+- []{#ref-openmocdocs}**[OpenMOC docs]** OpenMOC theory manual: §5 track
+  generation (cyclic tracks, azimuthal weights),
+  <https://mit-crpg.github.io/OpenMOC/methods/track_generation.html>; the
+  method of characteristics,
+  <https://mit-crpg.github.io/OpenMOC/methods/method_of_characteristics.html>
+  **(free)**
+
 ## Reactor physics {.unnumbered}
 
 - []{#ref-bell}**[Bell & Glasstone]** G. I. Bell, S. Glasstone, *Nuclear

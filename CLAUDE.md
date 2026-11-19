@@ -33,6 +33,7 @@ make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|nr; MODEL=vera-p1)
 make model MODEL=vera-p1 STATE=1A  # check a model file, print number densities
+make tracks MODEL=vera-p1 AZIM=64 SPACING=0.01  # cyclic tracks + ray tracing, area check
 make groups       # XMAS-172 libraries, free-gas thermal + H in H2O (endf-data/groups/); make library NUC=U238 T=293.6
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
@@ -65,6 +66,13 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   but unimplemented: hex geometry, eighth symmetry), `materials.py` (number
   densities from rho + formula + isotopics + ppm boron; masses = ENDF AWR x
   m_n), `homogenize.py` (area weighting -> `Component`).
+- `src/fission/transport/` (B1): `geometry.py` (`Geometry.from_lattice`:
+  FSRs = equal-area rings x sectors per cell, exact areas; cells numbered
+  from bottom-left, model map rows are top-down), `tracks.py`
+  (`cyclic_tracks`: OpenMOC-style cyclic angles/spacing, weights, sweep
+  links fwd/bwd, reflective or vacuum per side), `trace.py` (segments via
+  sorted crossings + midpoint classification; `track_areas`). Rust
+  `raytrace.rs` is bitwise identical to Python.
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -91,7 +99,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `15-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `16-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -146,7 +154,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file; theory docs ch. 0–15. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing; theory docs ch. 0–16. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -156,8 +164,8 @@ self-shielding (C1).
   - A4 thermal scattering: free gas + S(α,β) for H in H2O (done)
   - A5 infinite-medium spectrum + k∞ of the homogenized VERA 1 cell (done)
 - **B: transport**
-  - **B1 pin-cell geometry + cyclic ray tracing (next; reads geometry from the model)**
-  - B2 MOC, verified on C5G7 7-group data
+  - B1 pin-cell geometry + cyclic ray tracing (done)
+  - **B2 MOC, verified on C5G7 7-group data (next)**
   - B3 Rust sweep
 - **C: coupling**
   - C1 self-shielding (equivalence/Bondarenko + Dancoff, or subgroup)

@@ -12,6 +12,7 @@ pub mod groupr;
 pub mod infinite;
 pub mod mlbw;
 pub mod pointwise;
+pub mod raytrace;
 pub mod reconstruct;
 pub mod reich_moore;
 pub mod spin_groups;
@@ -41,6 +42,7 @@ impl Resonances for mlbw::Mlbw {
 }
 
 type Array<'py> = Bound<'py, PyArray1<f64>>;
+type IntArray<'py> = Bound<'py, PyArray1<i64>>;
 
 fn evaluate_many<'py, R: Resonances>(
     model: &R,
@@ -467,6 +469,61 @@ fn infinite_medium<'py>(
     Ok((k, phi.into_pyarray(py), it))
 }
 
+/// Segments of many tracks through a lattice (port of
+/// `transport.trace.trace_track`): (regions, lengths, start per track).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn trace_tracks<'py>(
+    py: Python<'py>,
+    pitch: f64,
+    nx: usize,
+    ny: usize,
+    radii: Vec<Vec<f64>>,
+    sectors: Vec<usize>,
+    offsets: Vec<usize>,
+    x0: PyReadonlyArray1<'py, f64>,
+    y0: PyReadonlyArray1<'py, f64>,
+    x1: PyReadonlyArray1<'py, f64>,
+    y1: PyReadonlyArray1<'py, f64>,
+) -> PyResult<(IntArray<'py>, Array<'py>, IntArray<'py>)> {
+    let cells = nx * ny;
+    if radii.len() != cells || sectors.len() != cells || offsets.len() != cells {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "radii, sectors and offsets need one entry per cell",
+        ));
+    }
+    if sectors.contains(&0) {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "sectors must be >= 1",
+        ));
+    }
+    let (x0, y0, x1, y1) = (
+        x0.as_slice()?,
+        y0.as_slice()?,
+        x1.as_slice()?,
+        y1.as_slice()?,
+    );
+    if y0.len() != x0.len() || x1.len() != x0.len() || y1.len() != x0.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "track arrays differ in length",
+        ));
+    }
+    let lattice = raytrace::Lattice {
+        pitch,
+        nx,
+        ny,
+        radii,
+        sectors,
+        offsets,
+    };
+    let (regions, lengths, start) = py.detach(|| raytrace::trace_all(&lattice, x0, y0, x1, y1));
+    Ok((
+        regions.into_pyarray(py),
+        lengths.into_pyarray(py),
+        start.into_pyarray(py),
+    ))
+}
+
 /// The n-point Gauss-Legendre rule (for parity tests with numpy's leggauss).
 #[pyfunction]
 fn gauss_legendre<'py>(py: Python<'py>, n: usize) -> (Array<'py>, Array<'py>) {
@@ -604,6 +661,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(thermal_table, m)?)?;
     m.add_function(wrap_pyfunction!(infinite_medium, m)?)?;
     m.add_function(wrap_pyfunction!(gauss_legendre, m)?)?;
+    m.add_function(wrap_pyfunction!(trace_tracks, m)?)?;
     m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;
