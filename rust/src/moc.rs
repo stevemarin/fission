@@ -20,20 +20,32 @@ pub struct Tracks<'a> {
     pub groups: usize,
 }
 
+/// Cell-face crossings of every track (see `transport.trace.Crossings`).
+pub struct Faces<'a> {
+    pub start: &'a [i64],
+    pub position: &'a [i64],
+    pub face: &'a [i64],
+    pub sign: &'a [f64],
+    pub n_faces: usize,
+}
+
 struct Partial {
     tally: Vec<f64>,
+    currents: Vec<f64>,
     handoff: Vec<(usize, Vec<f64>)>, // (destination slot t * 2 + d, psi)
     leakage: f64,
 }
 
 /// Sweep all tracks: returns (tally of W delta psi per region and group,
-/// incoming fluxes for the next iteration, leakage).
+/// incoming fluxes for the next iteration, leakage, net currents per face
+/// and group in the +x / +y direction; empty without `faces`).
 pub fn sweep(
     tr: &Tracks,
+    faces: Option<&Faces>,
     sigma_t: &[f64],
     source: &[f64],
     psi_in: &[f64],
-) -> (Vec<f64>, Vec<f64>, f64) {
+) -> (Vec<f64>, Vec<f64>, f64, Vec<f64>) {
     let g_n = tr.groups;
     let p_n = tr.sin.len();
     let n_tracks = tr.start.len() - 1;
@@ -41,17 +53,68 @@ pub fn sweep(
     let inv_sin: Vec<f64> = tr.sin.iter().map(|s| 1.0 / s).collect();
     let slot = p_n * g_n;
 
+    let n_cur = faces.map_or(0, |f| f.n_faces * g_n);
+    // Add direction * sign * sum_p W psi to the faces crossed at `position`.
+    // Crossings are sorted by position, so a cursor walks along with the
+    // sweep: `next` is the next crossing forward, `end` (exclusive) the next
+    // one backward.
+    let tally_faces = |currents: &mut Vec<f64>,
+                       cursor: &mut (usize, usize),
+                       forward: bool,
+                       position: usize,
+                       psi: &[f64],
+                       w: &[f64]| {
+        let Some(f) = faces else { return };
+        loop {
+            let c = if forward {
+                if cursor.0 >= cursor.1 || f.position[cursor.0] as usize != position {
+                    break;
+                }
+                cursor.0 += 1;
+                cursor.0 - 1
+            } else {
+                if cursor.1 <= cursor.0 || f.position[cursor.1 - 1] as usize != position {
+                    break;
+                }
+                cursor.1 -= 1;
+                cursor.1
+            };
+            let base = f.face[c] as usize * g_n;
+            let s = if forward { f.sign[c] } else { -f.sign[c] };
+            for g in 0..g_n {
+                let mut sum = 0.0;
+                for p in 0..p_n {
+                    sum += w[p] * psi[p * g_n + g];
+                }
+                currents[base + g] += s * sum;
+            }
+        }
+    };
+
     let run = |lo: usize, hi: usize| -> Partial {
         let mut tally = vec![0.0; sigma_t.len()];
+        let mut currents = vec![0.0; n_cur];
         let mut handoff = Vec::with_capacity(2 * (hi - lo));
         let mut leakage = 0.0;
         let mut delta = vec![0.0; slot];
         for t in lo..hi {
             let (a, b) = (tr.start[t] as usize, tr.start[t + 1] as usize);
             let w = &tr.weights[t * p_n..(t + 1) * p_n];
+            let n = b - a;
             for d in 0..2 {
                 let mut psi = psi_in[(t * 2 + d) * slot..(t * 2 + d + 1) * slot].to_vec();
-                for step in 0..(b - a) {
+                let forward = d == 0;
+                let mut cursor =
+                    faces.map_or((0, 0), |f| (f.start[t] as usize, f.start[t + 1] as usize));
+                tally_faces(
+                    &mut currents,
+                    &mut cursor,
+                    forward,
+                    if forward { 0 } else { n },
+                    &psi,
+                    w,
+                );
+                for step in 0..n {
                     let k = if d == 0 { a + step } else { b - 1 - step };
                     let r = tr.region[k] as usize;
                     let row = r * g_n;
@@ -73,8 +136,10 @@ pub fn sweep(
                     for (x, dx) in psi.iter_mut().zip(&delta) {
                         *x -= dx;
                     }
+                    let position = if forward { k - a + 1 } else { k - a };
+                    tally_faces(&mut currents, &mut cursor, forward, position, &psi, w);
                 }
-                let (next, forward) = if d == 0 {
+                let (next, next_forward) = if forward {
                     (tr.next_fwd[t], tr.fwd_forward[t])
                 } else {
                     (tr.next_bwd[t], tr.bwd_forward[t])
@@ -86,13 +151,14 @@ pub fn sweep(
                         }
                     }
                 } else {
-                    let dest = next as usize * 2 + if forward != 0 { 0 } else { 1 };
+                    let dest = next as usize * 2 + if next_forward != 0 { 0 } else { 1 };
                     handoff.push((dest, psi));
                 }
             }
         }
         Partial {
             tally,
+            currents,
             handoff,
             leakage,
         }
@@ -117,8 +183,12 @@ pub fn sweep(
     let mut tally = vec![0.0; sigma_t.len()];
     let mut psi_next = vec![0.0; psi_in.len()];
     let mut leakage = 0.0;
+    let mut currents = vec![0.0; n_cur];
     for part in parts {
         for (x, y) in tally.iter_mut().zip(&part.tally) {
+            *x += y;
+        }
+        for (x, y) in currents.iter_mut().zip(&part.currents) {
             *x += y;
         }
         for (dest, psi) in part.handoff {
@@ -126,7 +196,7 @@ pub fn sweep(
         }
         leakage += part.leakage;
     }
-    (tally, psi_next, leakage)
+    (tally, psi_next, leakage, currents)
 }
 
 #[cfg(test)]
@@ -148,7 +218,7 @@ mod tests {
             sin: &[1.0],
             groups: 1,
         };
-        let (tally, next, leakage) = sweep(&tr, &[1.0], &[2.0], &[0.0, 0.0]);
+        let (tally, next, leakage, _) = sweep(&tr, None, &[1.0], &[2.0], &[0.0, 0.0]);
         // each sweep: delta psi = -2 (1 - e^-100); leaks psi_out = 2 (1 - e^-100)
         assert!((tally[0] + 4.0).abs() < 1e-12);
         assert!((leakage - 4.0).abs() < 1e-12);

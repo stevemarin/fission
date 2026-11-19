@@ -123,8 +123,8 @@ convergence: after a change $d$, the remaining error is
 $d(\rho + \rho^2 + \dots) = d\,\rho/(1-\rho)$. The solver measures $\rho$ over
 the last 10 iterations and stops when this *estimated remaining error* of
 $k$ and of the fission source is below the tolerance. The cure for the
-slowness is acceleration: a coarse-mesh diffusion problem that moves
-neutrons across the whole core at once (CMFD), which is step B3.
+slowness is acceleration: a coarse-mesh problem that moves neutrons across
+the whole core at once (CMFD, below).
 
 **Rust.** The sweep is the hot loop. Its Rust port (`moc.rs`) splits the
 tracks over threads: within one sweep, tracks are independent, because their
@@ -132,6 +132,80 @@ incoming fluxes come from the previous iteration. Each thread keeps its own
 tally, and the tallies are added at the end. The iteration around it stays in
 Python. On a pin cell, Python and Rust agree to $10^{-15}$ in $k$; one C5G7
 sweep (5.9 million segments, 7 groups, 3 polar angles) takes 0.17 s.
+
+## Acceleration: coarse-mesh finite difference (CMFD)
+
+Power iteration is slow because each sweep carries information one track
+length further. CMFD adds, after every sweep, a small problem on a coarse
+mesh, here one cell per pin cell, that couples the whole core at once and is
+cheap to solve completely. Its answer then rescales the MOC fluxes.
+
+**The coarse balance is exact.** Integrate the transport equation over a
+coarse cell $c$ of area $V_c$ and over all directions:
+
+$$
+\sum_{\text{faces}} J_{\text{out}} + \Sigma_{t,c,g}V_c\,\phi_{c,g}
+= V_c\Big[\sum_{g'}\Sigma_{s,g'\to g,c}\,\phi_{c,g'}
++ \frac{\chi_{c,g}}{k}\sum_{g'}\nu\Sigma_{f,c,g'}\,\phi_{c,g'}\Big].
+$$
+
+The coarse cross sections are flux-volume weighted,
+$\Sigma_{x,c} = \sum_i A_i\Sigma_{x,i}\phi_i / \sum_i A_i\phi_i$, and the
+$J$ are the **net currents** through the cell faces. The sweep tallies them:
+where a track crosses a face, it adds $\sum_p W\psi$ with the sign of its
+direction, the same flow measure as the leakage. For the region sums of
+the sweep, $\sum W\Delta\psi$ over a cell telescopes to the inflow minus
+the outflow through its faces. The tests check this identity cell by cell.
+
+**Closing it with diffusion.** To solve for new fluxes, the currents must be
+written in terms of the coarse fluxes. Finite-difference diffusion, with
+$D = 1/(3\Sigma_t)$ and a correction term $\hat D$, gives across the face
+between cells L and R
+
+$$
+J = -\tilde D\,(\phi_R - \phi_L) - \hat D\,(\phi_R + \phi_L),
+\qquad
+\tilde D = \frac{2D_LD_R}{D_L + D_R},
+$$
+
+with $\phi = 0$ outside the core. On a uniform mesh the face length and the
+cell width cancel. A vacuum side uses the Marshak condition,
+$\tilde D = 2Dh/(h + 4D)$; a reflective side has no current. The
+correction $\hat D$ is chosen so that the formula returns *exactly the MOC
+current* at the present fluxes:
+
+$$
+\hat D = -\frac{J_{\text{MOC}} + \tilde D(\phi_R - \phi_L)}{\phi_R + \phi_L}.
+$$
+
+The coarse problem therefore has the MOC solution as its own solution
+once MOC has converged. Diffusion theory only shapes how the iteration
+gets there, so it introduces no diffusion error. The tests check that, at
+the converged MOC flux, every coarse equation balances to $10^{-8}$.
+
+**Solving it.** The coarse problem has 51 × 51 cells × 7 groups for C5G7. It is
+solved by its own power iteration on $k$. Each outer iteration sweeps the
+groups from fast to thermal, so down-scattered neutrons are used at once
+(Gauss–Seidel in energy). Each group's five-point system gets four passes
+of red–black successive over-relaxation (factor 1.5). This takes a few
+hundred cheap outer iterations, about 0.02 s in Rust.
+
+**Prolongation.** Every MOC flux in coarse cell $c$ is multiplied by
+$\phi_c^{\text{new}}/\phi_c^{\text{MOC}}$. So is the incoming angular flux
+of every track that starts in $c$. $k$ is taken from the coarse problem.
+
+**Stability.** Plain CMFD diverged on C5G7: after a dozen iterations the
+correction factors swung between 0.02 and 37, and then went negative. The
+trouble starts in the reflector corner next to the vacuum sides, in the
+thermal group, where a water cell is $\Sigma_t h \approx 3.3$ mean free
+paths thick. CMFD is known to become unstable on optically thick coarse
+cells. Several cures exist: optimally diffusive CMFD and partial-current
+CMFD change the coarse equations. This code uses the simplest one,
+**under-relaxing the correction**,
+$\hat D \leftarrow w\hat D + (1 - w)\hat D^{\text{previous}}$. With $w = 0.7$
+or $0.5$, C5G7 converged in about 20 iterations; $w = 0.3$ also converged, a
+little more slowly. The choice is empirical, tested on these problems; it
+is not a proven bound.
 
 ## Checks
 
@@ -143,6 +217,10 @@ sweep (5.9 million segments, 7 groups, 3 polar angles) takes 0.17 s.
   over absorption plus leakage equals $k$ to $10^{-7}$.
 * **Discretization.** Refining the tracks (8→64 directions, 0.1→0.01 cm)
   converges $k$ of a pin cell.
+* **CMFD** returns the same $k$ (to $10^{-8}$) and flux shape (to
+  $10^{-6}$) as plain power iteration, with reflective and with vacuum
+  sides, in a quarter of the iterations or fewer. Python and Rust agree on
+  the currents to $10^{-12}$, and on the coarse solve to $10^{-13}$.
 
 ## C5G7
 
@@ -166,38 +244,63 @@ the grey level of each cell. They match the stated counts: 24 guide tubes
 and one fission chamber per assembly, and MOX zones of 64, 100 and 100
 pins.
 
-Results, each converged to an estimated error below $10^{-6}$ in $k$ and
-$10^{-5}$ in the fission source:
+**Acceleration.** Without CMFD, every run needed about 1240 sweeps,
+whatever the tracking. With CMFD it needs 22–39, and gives the same $k$:
 
-| tracking | regions | segments | sweeps | time | $k$ | vs MCNP |
-| --- | --- | --- | --- | --- | --- | --- |
-| 16 directions, 0.1 cm, 2 polar, 1 ring, 4 sectors | 15,028 | 0.87 M | 1241 | 82 s | 1.185432 | −112 pcm |
-| 32 directions, 0.05 cm, 3 polar, 2 rings, 8 sectors | 39,304 | 5.9 M | 1242 | 314 s | 1.186933 | +38 pcm |
-| as above, 6 polar | 39,304 | 5.9 M | 1242 | 705 s | 1.186981 | +43 pcm |
+| tracking | regions | without CMFD | with CMFD | $k$ |
+| --- | --- | --- | --- | --- |
+| 16 directions, 0.1 cm, 2 polar, 1 ring, 4 sectors | 15,028 | 1241 sweeps, 82 s | 22, 1.7 s | 1.185433 |
+| 32 directions, 0.05 cm, 3 polar, 2 rings, 8 sectors | 39,304 | 1242 sweeps, 314 s | 33, 8 s | 1.186933 |
 
-| | reference (MCNP) | coarse | fine (3 polar) |
-| --- | --- | --- | --- |
-| inner UO$_2$ assembly power | 492.8 | 490.0 (−0.58%) | 491.1 (−0.34%) |
-| MOX assembly power | 211.7 | 212.5 (+0.36%) | 212.2 (+0.22%) |
-| outer UO$_2$ assembly power | 139.8 | 141.1 (+0.96%) | 140.5 (+0.53%) |
-| maximum pin power | 2.498 | 2.482 (−0.63%) | 2.488 (−0.40%) |
+Both runs are converged to an estimated error below $10^{-6}$ in $k$ and
+$10^{-5}$ in the fission source.
+
+**Where the error was.** With the solver now cheap, the discretization can
+be studied. All of the following runs use CMFD and are converged to
+$10^{-7}$ in $k$:
+
+| directions, spacing, polar | fuel rings | sectors | coolant mesh | regions | $k$ vs MCNP |
+| --- | --- | --- | --- | --- | --- |
+| 16, 0.1 cm, 2 | 1 | 4 | none | 15,028 | −112 pcm |
+| 32, 0.05 cm, 3 | 2 | 8 | none | 39,304 | +38 pcm |
+| 32, 0.05 cm, 6 | 2 | 8 | none | 39,304 | +43 pcm |
+| 64, 0.03 cm, 3 | 3 | 8 | none | 48,552 | +65 pcm |
+| 128, 0.02 cm, 3 | 3 | 8 | ring in reflector cells | 71,672 | +66 pcm |
+| 64, 0.03 cm, 3 | 3 | 8 | ring at 0.6 cm everywhere | 80,920 | +17 pcm |
+| 64, 0.03 cm, 3 | 3 | 16 | ring at 0.6 cm everywhere | 161,840 | **−2 pcm** |
+| 128, 0.02 cm, 4 | 3 | 16 | ring at 0.6 cm everywhere | 161,840 | +10 pcm |
+
+More directions, more polar angles and finer spacing *raised* $k$ and then
+stopped changing it, near +65 pcm. So the angular error had been partly
+cancelling an error of the opposite sign. That error was the flat-source
+approximation in the **coolant**: each pin cell's water outside the pin was
+one region per sector, although its flux changes strongly between the pin
+surface and the cell corner. An extra ring at 0.6 cm (inside the 0.63 cm
+half pitch) and 16 sectors give the coolant a mesh fine enough for flat
+sources. These rings change only the mesh, not the geometry (the
+`outer_ring` option). The benchmark's own participants differ from the
+reference by 0.1 to about 950 pcm [[C5G7](#ref-c5g7), Table 17]; among
+the characteristics codes, DeCART is at +4 pcm and APOLLO2 at −31 pcm.
+
+The default of `make moc` uses this mesh, with 64 directions, 0.03 cm
+spacing, 3 polar angles, 3 fuel rings and 138,720 regions (the reflector
+cells hold no pin, so they get the ring but no pin rings). It runs in
+44 s:
+
+| | reference (MCNP) | this code |
+| --- | --- | --- |
+| $k$ | 1.186550 | 1.186560 (+1 pcm) |
+| inner UO$_2$ assembly power | 492.8 | 492.5 (−0.06%) |
+| MOX assembly power | 211.7 | 211.7 (+0.02%) |
+| outer UO$_2$ assembly power | 139.8 | 140.1 (+0.18%) |
+| maximum pin power | 2.498 | 2.497 (−0.04%) |
 
 The pin powers are normalized to an average of 1 over the 1056 fuel pins,
-and an assembly's power is the sum over its 264 pins. Doubling the polar
-angles changes $k$ by only 5 pcm. The remaining difference therefore comes
-mostly from the spatial and azimuthal discretization: flat sources in
-large regions (the reflector cells are 1.26 cm squares cut only into
-sectors) and the track density. For comparison, the benchmark's
-participants differ from the reference by 0.1 to about 950 pcm
-[[C5G7](#ref-c5g7), Table 17]. Among the characteristics codes, DeCART
-is at +4 pcm and APOLLO2 at −31 pcm. Refining the regions of this
-calculation, especially in the reflector, is the next lever, and a cheap
-one once CMFD cuts the sweep count.
+and an assembly's power is the sum over its 264 pins. The reference's own
+uncertainties are 0.003% for $k$ and 0.1–0.2% for the assembly powers
+(Tables 3–5).
 
-Each run needed about 1240 sweeps. That number depends on the core, not on
-the tracking, and it is what CMFD acceleration (B3) is meant to cut.
-
-![C5G7 with coarse tracking (16 directions, 0.1 cm, 2 polar angles). Left: pin powers of the four fuel assemblies. Right: how slowly power iteration approaches its final eigenvalue.](../figures/c5g7.svg)
+![C5G7 with coarse tracking (16 directions, 0.1 cm, 2 polar angles). Left: pin powers of the four fuel assemblies. Right: convergence of k with plain power iteration and with CMFD (logarithmic iteration axis).](../figures/c5g7.svg)
 
 ## Further reading
 
@@ -209,6 +312,9 @@ the tracking, and it is what CMFD acceleration (B3) is meant to cut.
   acceleration.
 * Code: [`moc.py`](../../src/fission/transport/moc.py) (sweep, power
   iteration, convergence estimate), [`moc.rs`](../../rust/src/moc.rs),
+  [`cmfd.py`](../../src/fission/transport/cmfd.py) and
+  [`cmfd.rs`](../../rust/src/cmfd.rs) (coarse mesh, corrections, coarse
+  solve), [`trace.py`](../../src/fission/transport/trace.py) (face crossings),
   [`run.py`](../../src/fission/transport/run.py) (C5G7 driver and reference
   values), [`c5g7.toml`](../../models/c5g7.toml),
   [`c5g7-xs.toml`](../../models/c5g7-xs.toml); `make moc`.

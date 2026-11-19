@@ -321,18 +321,20 @@ def _lattice(
         size = t.raw("size")
         if isinstance(size, bool) or not isinstance(size, int) or size < 1:
             _fail(t.at("size"), "expected a positive integer (pins per side)")
-        legend: dict[str, str | None] = {"x": fill}
-        t.data["map"] = "\n".join([" ".join(["x"] * size)] * size)
-        t.known.add("size")
+        legend: dict[str, str | None] = {"fill": fill}
     else:
         legend = _legend(t)
     for key, pin in legend.items():
+        where = t.at("fill" if key == "fill" else f"legend.{key}")
         if pin is None or pin not in pins:
-            _fail(t.at(f"legend.{key}"), f"unknown pin {pin!r}")
+            _fail(where, f"unknown pin {pin!r}")
         if pins[pin].radii and pins[pin].radii[-1] > pitch / 2:
-            _fail(t.at(f"legend.{key}"), f"pin {pin!r} (radius {pins[pin].radii[-1]:g} cm) "
+            _fail(where, f"pin {pin!r} (radius {pins[pin].radii[-1]:g} cm) "
                   f"does not fit in the pitch {pitch:g} cm")  # fmt: skip
-    grid = _grid(t, legend)
+    if "fill" in legend:
+        grid: tuple[tuple[str | None, ...], ...] = ((legend["fill"],) * size,) * size
+    else:
+        grid = _grid(t, legend)
     if len(grid) != len(grid[0]):
         _fail(t.at("map"), f"must be square, got {len(grid)} rows of {len(grid[0])}")
     t.finish()

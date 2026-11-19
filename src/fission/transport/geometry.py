@@ -163,8 +163,11 @@ class Geometry:
         rings: dict[str, int] | None = None,
         sectors: int = 8,
         z: float | None = None,
+        outer_ring: float | None = None,
     ) -> Geometry:
         """FSR mesh of the whole core map, cut at height z (default: mid-height).
+
+        rings, sectors, outer_ring: as in ``from_lattice``.
 
         Every assembly's lattice must be exactly one assembly pitch wide and
         all lattices must share one pin pitch, so that the core is one grid
@@ -186,7 +189,9 @@ class Geometry:
             bottom = 0.0
             for seg in model.assemblies[a].segments:
                 if bottom <= level < bottom + seg.height:
-                    slices[a] = cls.from_lattice(model, seg.lattice, rings, sectors)
+                    slices[a] = cls.from_lattice(
+                        model, seg.lattice, rings, sectors, outer_ring
+                    )
                 bottom += seg.height
         pitches = {g.pitch for g in slices.values()}
         if len(pitches) != 1:
@@ -212,11 +217,15 @@ class Geometry:
         lattice: str,
         rings: dict[str, int] | None = None,
         sectors: int = 8,
+        outer_ring: float | None = None,
     ) -> Geometry:
         """FSR mesh of a model lattice.
 
         rings: material -> number of equal-area rings per ring of that material
-        (default 1); sectors: rays per cell (1 = no sectors).
+        (default 1); sectors: rays per cell (1 = no sectors); outer_ring: an
+        extra circle (cm) in the material that fills the square, outside the
+        pin, for cells whose rings end inside it. It changes only the mesh: the
+        coolant near the pin and in the corners get separate flat sources.
         """
         lat = model.lattices[lattice]
         if lat.pins is None or lat.pitch is None:
@@ -234,6 +243,9 @@ class Geometry:
                 radii.extend(split_ring(inner, r, n))
                 materials.extend([m] * n)
                 inner = r
+            if outer_ring is not None and inner < outer_ring < lat.pitch / 2:
+                radii.append(outer_ring)
+                materials.append(pin.materials[-1])
             materials.append(pin.materials[-1])
             meshes[name] = CellMesh(tuple(radii), tuple(materials), sectors)
         n = len(lat.pins)

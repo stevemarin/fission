@@ -46,8 +46,9 @@ import numpy as np
 
 from fission.model import MacroXS, Model
 
+from . import cmfd
 from .geometry import Geometry
-from .trace import Segments, trace, track_areas
+from .trace import Crossings, Segments, crossings, trace, track_areas
 from .tracks import TrackSet
 
 FOUR_PI = 4.0 * math.pi
@@ -79,6 +80,7 @@ class Problem:
     areas: np.ndarray  # exact FSR areas (cm^2)
     material: np.ndarray  # material index of each FSR
     xs: list[MacroXS]  # by material index
+    crossings: Crossings | None = None  # cell-face crossings (for CMFD currents)
 
     @property
     def groups(self) -> int:
@@ -102,8 +104,13 @@ def build(
     tracks: TrackSet,
     n_polar: int = 3,
     use_rust: bool = True,
+    faces: bool = True,
 ) -> Problem:
-    """Trace, correct the segment lengths, and map regions to cross sections."""
+    """Trace, correct the segment lengths, and map regions to cross sections.
+
+    faces: also find where tracks cross the cell faces, so that sweeps can
+    tally net currents (needed by CMFD).
+    """
     names = sorted(set(geometry.materials()))
     xs = []
     for name in names:
@@ -117,9 +124,11 @@ def build(
     areas = geometry.areas()
     estimated = tracks.weights @ track_areas(geometry, tracks, segments)
     segments.length = segments.length * (areas / estimated)[segments.region]
+    faces_crossed = crossings(geometry, tracks, segments) if faces else None
     return Problem(
-        geometry, tracks, segments, Polar.gauss(n_polar), areas, material, xs
-    )
+        geometry, tracks, segments, Polar.gauss(n_polar), areas, material, xs,
+        faces_crossed,
+    )  # fmt: skip
 
 
 # ---------------------------------------------------------------- one sweep
@@ -128,54 +137,93 @@ def sweep(
     sigma_t: np.ndarray,
     source: np.ndarray,
     psi_in: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, float]:
+) -> tuple[np.ndarray, np.ndarray, float, np.ndarray | None]:
     """Sweep every track both ways (Python reference).
 
     sigma_t, source: (regions, groups); source is Q, per steradian.
     psi_in: (tracks, 2, polar, groups) incoming flux of each sweep
     (direction 0 forward, 1 backward).
-    Returns (tally of W delta psi per region, next psi_in, leakage).
+    Returns (tally of W delta psi per region, next psi_in, leakage, net
+    current through every cell face in the +x / +y direction, or None if
+    the problem has no face crossings). A current is sum W psi over the
+    sweeps crossing the face, the same flow measure as the leakage.
     """
-    tr, seg = problem.tracks, problem.segments
+    tr, seg, cross = problem.tracks, problem.segments, problem.crossings
     weights = problem.weights()
     inv_sin = 1.0 / problem.polar.sin
     ratio = source / sigma_t
     tally = np.zeros_like(source)
     psi_next = np.zeros_like(psi_in)
+    currents = None if cross is None else np.zeros((cross.n_faces, source.shape[1]))
     leakage = 0.0
     for t in range(len(tr)):
         regions, lengths = seg.of(t)
+        at: dict[int, list[tuple[int, float]]] = {}  # position -> (face, sign)
+        if cross is not None:
+            for c in range(cross.start[t], cross.start[t + 1]):
+                at.setdefault(int(cross.position[c]), []).append(
+                    (int(cross.face[c]), float(cross.sign[c]))
+                )
+
+        n = len(regions)
         for d, forward in enumerate((True, False)):
             psi = psi_in[t, d].copy()  # (polar, groups)
-            order = range(len(regions)) if forward else range(len(regions) - 1, -1, -1)
+            direction = 1.0 if forward else -1.0
+            _tally_faces(currents, at, weights[t], 0 if forward else n, psi, direction)
+            order = range(n) if forward else range(n - 1, -1, -1)
             for k in order:
                 r = regions[k]
                 tau = sigma_t[r][None, :] * (lengths[k] * inv_sin)[:, None]
                 delta = (psi - ratio[r][None, :]) * -np.expm1(-tau)
                 tally[r] += weights[t] @ delta
                 psi -= delta
+                _tally_faces(currents, at, weights[t], k + 1 if forward else k, psi,
+                             direction)  # fmt: skip
             nxt = tr.next_fwd[t] if forward else tr.next_bwd[t]
             nfw = tr.fwd_forward[t] if forward else tr.bwd_forward[t]
             if nxt < 0:
                 leakage += float((weights[t] @ psi).sum())
             else:
                 psi_next[nxt, 0 if nfw else 1] = psi
-    return tally, psi_next, leakage
+    return tally, psi_next, leakage, currents
+
+
+def _tally_faces(
+    currents: np.ndarray | None,
+    at: dict[int, list[tuple[int, float]]],
+    weights: np.ndarray,
+    position: int,
+    psi: np.ndarray,
+    direction: float,
+) -> None:
+    """Add the signed flow sum_p W psi to the faces crossed at this position."""
+    if currents is None:
+        return
+    for face, sign in at.get(position, ()):
+        currents[face] += direction * sign * (weights @ psi)
 
 
 def _rust_sweep(problem: Problem, sigma_t, source, psi_in):
     from fission import _rust
 
-    tr = problem.tracks
-    tally, psi_next, leakage = _rust.moc_sweep(
+    tr, cross = problem.tracks, problem.crossings
+    faces = None
+    if cross is not None:
+        faces = (cross.start, cross.position, cross.face, cross.sign, cross.n_faces)
+    tally, psi_next, leakage, currents = _rust.moc_sweep(
         problem.segments.region, problem.segments.length, problem.segments.start,
         tr.next_fwd, tr.fwd_forward.astype(np.int64), tr.next_bwd,
         tr.bwd_forward.astype(np.int64), np.ascontiguousarray(problem.weights().ravel()),
         problem.polar.sin, np.ascontiguousarray(sigma_t.ravel()),
         np.ascontiguousarray(source.ravel()), np.ascontiguousarray(psi_in.ravel()),
-        problem.groups,
+        problem.groups, faces,
     )  # fmt: skip
-    return tally.reshape(source.shape), psi_next.reshape(psi_in.shape), leakage
+    return (
+        tally.reshape(source.shape),
+        psi_next.reshape(psi_in.shape),
+        leakage,
+        None if cross is None else currents.reshape(cross.n_faces, problem.groups),
+    )
 
 
 # ---------------------------------------------------------------- eigenvalue
@@ -187,6 +235,9 @@ class Solution:
     iterations: int
     leakage: float  # neutrons leaving through vacuum sides (per unit height)
     history: list[float] = field(default_factory=list)  # k per iteration
+    coarse_iterations: list[int] = field(
+        default_factory=list
+    )  # CMFD outers per iteration
 
     def rates(self, name: str) -> np.ndarray:
         """Reaction rate per region (integrated over its area), summed over groups."""
@@ -248,8 +299,13 @@ def solve(
     max_iterations: int = 10000,
     use_rust: bool = True,
     verbose: bool = False,
+    cmfd: bool = True,
 ) -> Solution:
     """Power iteration with one transport sweep per iteration.
+
+    cmfd: accelerate every iteration with a coarse-mesh (pin-cell) problem
+    (needs the face crossings, ``build(faces=True)``); otherwise plain power
+    iteration.
 
     Stops when the *estimated remaining* errors (``remaining_error``) of k and
     of the fission source are below tol_k and tol_source.
@@ -269,16 +325,27 @@ def solve(
     history: list[float] = []
     changes: list[tuple[float, float]] = []  # (|dk|, source change) per iteration
     leakage = 0.0
+    accelerate = cmfd and problem.crossings is not None
+    if cmfd and not accelerate:
+        raise ValueError("CMFD needs face crossings: build the problem with faces=True")
+    coarse_iterations: list[int] = []
+    cmfd_state: dict = {}
     for it in range(1, max_iterations + 1):
         in_scatter = np.einsum("rgh,rg->rh", scatter, flux)
         source = (in_scatter + chi * (production / k)[:, None]) / FOUR_PI
         if use_rust:
-            tally, psi, leakage = _rust_sweep(problem, sigma_t, source, psi)
+            tally, psi, leakage, currents = _rust_sweep(problem, sigma_t, source, psi)
         else:
-            tally, psi, leakage = sweep(problem, sigma_t, source, psi)
+            tally, psi, leakage, currents = sweep(problem, sigma_t, source, psi)
         flux = FOUR_PI * source / sigma_t + tally / (sigma_t * areas[:, None])
+        if accelerate:
+            assert currents is not None
+            flux, psi, k_new, outer = cmfd_step(problem, flux, currents, psi, k, use_rust,
+                                                cmfd_state)  # fmt: skip
+            coarse_iterations.append(outer)
+        else:
+            k_new = k * (areas @ (nu_fission * flux).sum(axis=1)) / (areas @ production)
         new_production = (nu_fission * flux).sum(axis=1)
-        k_new = k * (areas @ new_production) / (areas @ production)
         # relative change of the fission source, where there is a real one
         fissile = production > 1e-6 * production.max()
         change = float(
@@ -289,9 +356,49 @@ def solve(
         history.append(k)
         err_k, err_s = remaining_error(changes)
         converged = err_k < tol_k and err_s < tol_source
-        if verbose and (it % 100 == 0 or converged):
+        if verbose and (it % (10 if accelerate else 100) == 0 or converged):
             print(f"  iteration {it:5d}: k = {k:.6f}, estimated error in k {err_k:.1e}, "
                   f"in the source {err_s:.1e}")  # fmt: skip
         if converged:
             break
-    return Solution(problem, k, flux, it, leakage, history)
+    return Solution(problem, k, flux, it, leakage, history, coarse_iterations)
+
+
+def cmfd_step(
+    problem: Problem,
+    flux: np.ndarray,
+    currents: np.ndarray,
+    psi: np.ndarray,
+    k: float,
+    use_rust: bool = True,
+    state: dict | None = None,
+    relax: float = cmfd.RELAX,
+) -> tuple[np.ndarray, np.ndarray, float, int]:
+    """Solve the coarse problem and rescale the MOC fluxes with it.
+
+    state carries the previous correction D^ between calls (relaxation).
+    Returns (flux, incoming angular fluxes, k, coarse outer iterations).
+    """
+    state = {} if state is None else state
+    coarse = cmfd.homogenize(problem, flux)
+    dtx, dhx, dty, dhy = cmfd.couplings(
+        problem, coarse, currents, state.get("dh"), relax
+    )
+    state["dh"] = (dhx, dhy)
+    op = cmfd.operator(coarse, dtx, dhx, dty, dhy)
+    if use_rust:
+        k_c, phi_c, outer = cmfd.solve_coarse_rust(op, coarse.flux, k)
+    else:
+        k_c, phi_c, outer = cmfd.solve_coarse(op, coarse.flux, k)
+    groups = problem.groups
+    ratio = (phi_c / coarse.flux).reshape(groups, -1)  # (groups, cells)
+    cell = problem.geometry.cell_of_regions()
+    flux = flux * ratio[:, cell].T
+    # incoming angular fluxes: scaled by the ratio of the cell they enter
+    seg_cell = cell[problem.segments.region]
+    start = problem.segments.start
+    entry = np.stack(
+        [seg_cell[start[:-1]], seg_cell[start[1:] - 1]], axis=1
+    )  # (tracks, 2)
+    psi = psi * np.transpose(ratio[:, entry], (1, 2, 0))[:, :, None, :]
+    return flux, psi, k_c, outer

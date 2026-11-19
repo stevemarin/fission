@@ -34,7 +34,7 @@ make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|nr; MODEL=vera-p1)
 make model MODEL=vera-p1 STATE=1A  # check a model file, print number densities
 make tracks MODEL=vera-p1 AZIM=64 SPACING=0.01  # cyclic tracks + ray tracing, area check
-make moc CORE=c5g7 AZIM=32 SPACING=0.05  # MOC eigenvalue + pin powers vs C5G7 reference
+make moc CORE=c5g7 MOC_ARGS="--azim 128"  # MOC+CMFD eigenvalue + pin powers vs C5G7 (~1 min)
 make groups       # XMAS-172 libraries, free-gas thermal + H in H2O (endf-data/groups/); make library NUC=U238 T=293.6
 make docs         # docs/build/theory.html (pandoc, MathML, offline)
 make figures      # regenerate docs/figures/*.svg (deterministic output)
@@ -78,6 +78,12 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   iteration stopping on the extrapolated error d rho/(1-rho); Rust
   `moc.rs` sweep (threaded over tracks). `run.py`: core driver + C5G7
   reference (Tables 3-5). `Geometry.from_core` flattens the core map.
+  `cmfd.py` (B3): pin-cell coarse mesh; sweeps tally net face currents
+  (`trace.crossings`, signed sum W psi); D^ makes the coarse problem
+  reproduce MOC exactly; D^ under-relaxed (RELAX = 0.7, plain CMFD diverges
+  on C5G7's optically thick water cells); coarse power iteration with
+  red-black SOR (Rust `cmfd.rs`); prolongation scales FSR and boundary
+  angular fluxes. `solve(cmfd=True)` is the default; `--no-cmfd` in run.py.
 - `models/c5g7.toml` + `c5g7-xs.toml`: macroscopic materials (`macroscopic =`,
   `[model] multigroup =` library file), pins without rings (`radii = []`),
   `fill`/`size` lattices, `[core] boundary` per side. Layout read from the
@@ -163,7 +169,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7); theory docs ch. 0–17. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD; theory docs ch. 0–17. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -175,10 +181,9 @@ self-shielding (C1).
 - **B: transport**
   - B1 pin-cell geometry + cyclic ray tracing (done)
   - B2 MOC, verified on C5G7 7-group data (done; Rust sweep included)
-  - **B3 CMFD acceleration (next): unaccelerated power iteration needs
-    thousands of sweeps on C5G7**
+  - B3 CMFD acceleration (done: C5G7 1242 -> ~33 iterations)  
 - **C: coupling**
-  - C1 self-shielding (equivalence/Bondarenko + Dancoff, or subgroup)
+  - **C1 self-shielding (equivalence/Bondarenko + Dancoff, or subgroup) (next)**
   - C2 real pin cell vs VERA problem 1
   - C3 homogenize/condense to 2 groups + B1 → nodal (branch `claude-nodal`)
   - C4 CP cross-check, 17×17 assembly

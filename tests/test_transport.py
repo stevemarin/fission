@@ -212,3 +212,43 @@ def test_rust_trace_matches_python(make):
     np.testing.assert_array_equal(rs.start, py.start)
     np.testing.assert_array_equal(rs.region, py.region)
     assert np.max(np.abs(rs.length - py.length)) <= 1e-12 * g.width
+
+
+def test_outer_ring_only_refines_the_mesh():
+    model = parse(
+        {
+            "model": {"format": 1, "name": "t"},
+            "materials": {
+                m: {"temperature": "moderator", "atom_densities": {"H1": 1.0}}
+                for m in ("f", "w")
+            },
+            "pins": {
+                "p": {"radii": [0.54], "materials": ["f", "w"]},
+                "e": {"radii": [], "materials": ["w"]},
+                "big": {"radii": [0.62], "materials": ["f", "w"]},
+            },
+            "lattices": {
+                "L": {
+                    "pitch": 1.26,
+                    "legend": {"P": "p", "E": "e", "B": "big"},
+                    "map": "P E\nB P",
+                }
+            },
+        }
+    )
+    plain = Geometry.from_lattice(model, "L", sectors=4)
+    ringed = Geometry.from_lattice(model, "L", sectors=4, outer_ring=0.6)
+    pin, empty, big = (ringed.cells[i] for i in (2, 3, 0))  # map rows run from the top
+    assert pin.radii == (0.54, 0.6) and pin.materials == ("f", "w", "w")
+    assert empty.radii == (0.6,) and empty.materials == ("w", "w")
+    assert big.radii == (0.62,)  # pin already reaches past the ring: unchanged
+
+    # the same material areas, more regions
+    def by_material(g):
+        out = {}
+        for m, a in zip(g.materials(), g.areas(), strict=True):
+            out[m] = out.get(m, 0.0) + a
+        return out
+
+    assert by_material(ringed) == pytest.approx(by_material(plain), rel=1e-14)
+    assert ringed.regions > plain.regions

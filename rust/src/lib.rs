@@ -4,6 +4,7 @@
 //! `src/fission`; tests/test_rust_parity.py checks that the two agree.
 
 pub mod channel;
+pub mod cmfd;
 pub mod complex;
 pub mod doppler;
 pub mod fsum;
@@ -44,6 +45,14 @@ impl Resonances for mlbw::Mlbw {
 
 type Array<'py> = Bound<'py, PyArray1<f64>>;
 type IntArray<'py> = Bound<'py, PyArray1<i64>>;
+/// Face crossings from Python: (start, position, face, sign, number of faces).
+type FacesIn<'py> = (
+    PyReadonlyArray1<'py, i64>,
+    PyReadonlyArray1<'py, i64>,
+    PyReadonlyArray1<'py, i64>,
+    PyReadonlyArray1<'py, f64>,
+    usize,
+);
 
 fn evaluate_many<'py, R: Resonances>(
     model: &R,
@@ -526,8 +535,10 @@ fn trace_tracks<'py>(
 }
 
 /// One MOC sweep over all tracks (port of `transport.moc.sweep`):
-/// returns (tally per region x group, next incoming fluxes, leakage).
+/// returns (tally per region x group, next incoming fluxes, leakage, net
+/// currents per face x group; empty without `faces`).
 #[pyfunction]
+#[pyo3(signature = (region, length, start, next_fwd, fwd_forward, next_bwd, bwd_forward, weights, sin, sigma_t, source, psi_in, groups, faces=None))]
 #[allow(clippy::too_many_arguments)]
 fn moc_sweep<'py>(
     py: Python<'py>,
@@ -544,7 +555,8 @@ fn moc_sweep<'py>(
     source: PyReadonlyArray1<'py, f64>,
     psi_in: PyReadonlyArray1<'py, f64>,
     groups: usize,
-) -> PyResult<(Array<'py>, Array<'py>, f64)> {
+    faces: Option<FacesIn<'py>>,
+) -> PyResult<(Array<'py>, Array<'py>, f64, Array<'py>)> {
     let tracks = moc::Tracks {
         region: region.as_slice()?,
         length: length.as_slice()?,
@@ -577,8 +589,100 @@ fn moc_sweep<'py>(
     if tracks.region.iter().any(|&r| r < 0 || r >= regions) {
         return bad("segment region out of range");
     }
-    let (tally, next, leakage) = py.detach(|| moc::sweep(&tracks, sigma_t, source, psi_in));
-    Ok((tally.into_pyarray(py), next.into_pyarray(py), leakage))
+    let faces = match &faces {
+        None => None,
+        Some((start, position, face, sign, n_faces)) => {
+            let f = moc::Faces {
+                start: start.as_slice()?,
+                position: position.as_slice()?,
+                face: face.as_slice()?,
+                sign: sign.as_slice()?,
+                n_faces: *n_faces,
+            };
+            if f.start.len() != n + 1
+                || f.position.len() != f.face.len()
+                || f.sign.len() != f.face.len()
+                || f.face.iter().any(|&x| x < 0 || x as usize >= f.n_faces)
+            {
+                return bad("inconsistent face crossings");
+            }
+            Some(f)
+        }
+    };
+    let (tally, next, leakage, currents) =
+        py.detach(|| moc::sweep(&tracks, faces.as_ref(), sigma_t, source, psi_in));
+    Ok((
+        tally.into_pyarray(py),
+        next.into_pyarray(py),
+        leakage,
+        currents.into_pyarray(py),
+    ))
+}
+
+/// Coarse-mesh eigenvalue solve (port of `transport.cmfd.solve_coarse`):
+/// arrays flattened (groups, ny, nx); inscatter (g', g, ny, nx).
+/// Returns (k, phi, outer iterations).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (groups, ny, nx, diag, east, west, north, south, inscatter, fission, chi, phi, k, tol=1e-10, max_outer=5000, inner=4, omega=1.5))]
+fn cmfd_solve<'py>(
+    py: Python<'py>,
+    groups: usize,
+    ny: usize,
+    nx: usize,
+    diag: PyReadonlyArray1<'py, f64>,
+    east: PyReadonlyArray1<'py, f64>,
+    west: PyReadonlyArray1<'py, f64>,
+    north: PyReadonlyArray1<'py, f64>,
+    south: PyReadonlyArray1<'py, f64>,
+    inscatter: PyReadonlyArray1<'py, f64>,
+    fission: PyReadonlyArray1<'py, f64>,
+    chi: PyReadonlyArray1<'py, f64>,
+    phi: PyReadonlyArray1<'py, f64>,
+    k: f64,
+    tol: f64,
+    max_outer: usize,
+    inner: usize,
+    omega: f64,
+) -> PyResult<(f64, Array<'py>, usize)> {
+    let n = groups * ny * nx;
+    let op = cmfd::Operator {
+        groups,
+        ny,
+        nx,
+        diag: diag.as_slice()?,
+        east: east.as_slice()?,
+        west: west.as_slice()?,
+        north: north.as_slice()?,
+        south: south.as_slice()?,
+        inscatter: inscatter.as_slice()?,
+        fission: fission.as_slice()?,
+        chi: chi.as_slice()?,
+    };
+    let phi = phi.as_slice()?;
+    let sizes = [
+        op.diag.len(),
+        op.east.len(),
+        op.west.len(),
+        op.north.len(),
+        op.south.len(),
+        op.fission.len(),
+        op.chi.len(),
+        phi.len(),
+    ];
+    if n == 0 || sizes.iter().any(|&l| l != n) || op.inscatter.len() != n * groups {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "arrays must be groups x ny x nx (inscatter groups x groups x ny x nx)",
+        ));
+    }
+    let settings = cmfd::Settings {
+        tol,
+        max_outer,
+        inner,
+        omega,
+    };
+    let (k, phi, outer) = py.detach(|| cmfd::solve(&op, phi, k, &settings));
+    Ok((k, phi.into_pyarray(py), outer))
 }
 
 /// The n-point Gauss-Legendre rule (for parity tests with numpy's leggauss).
@@ -720,6 +824,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(gauss_legendre, m)?)?;
     m.add_function(wrap_pyfunction!(trace_tracks, m)?)?;
     m.add_function(wrap_pyfunction!(moc_sweep, m)?)?;
+    m.add_function(wrap_pyfunction!(cmfd_solve, m)?)?;
     m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;

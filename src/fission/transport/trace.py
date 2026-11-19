@@ -161,3 +161,94 @@ def track_areas(geometry: Geometry, tracks: TrackSet, segments: Segments) -> np.
     spacing = np.array([a.spacing for a in tracks.angles])[angle]
     np.add.at(out, (angle, segments.region), spacing * segments.length)
     return out
+
+
+# ---------------------------------------------------------------- cell faces
+@dataclass
+class Crossings:
+    """Where tracks cross the faces of the lattice cells (the CMFD mesh).
+
+    Faces are numbered x-faces first (the vertical line x = i p in row iy is
+    iy * (nx + 1) + i), then y-faces (y = j p in column ix is
+    n_x_faces + j * nx + ix); the outer boundary is included. For track t,
+    crossings start[t]:start[t+1] each give the position along the track
+    (0 = its start, n = after its last segment; position k is just before
+    segment k), the face, and the sign: +1 if the forward sweep crosses in
+    the +x (or +y) direction.
+    """
+
+    start: np.ndarray  # int64, tracks + 1
+    position: np.ndarray  # int64
+    face: np.ndarray  # int64
+    sign: np.ndarray  # float64, +1 or -1
+    n_faces: int
+
+
+def face_counts(geometry: Geometry) -> tuple[int, int]:
+    """(number of x-faces, number of y-faces)."""
+    return geometry.ny * (geometry.nx + 1), (geometry.ny + 1) * geometry.nx
+
+
+def crossings(geometry: Geometry, tracks: TrackSet, segments: Segments) -> Crossings:
+    """Face crossings of every track, from the cells of consecutive segments."""
+    nx, ny = geometry.nx, geometry.ny
+    n_xf, n_yf = face_counts(geometry)
+    tol = 1e-9 * max(geometry.width, geometry.height)
+    cell = geometry.cell_of_regions()[segments.region]
+    rows: list[tuple[int, int, int, float]] = []  # (track, position, face, sign)
+
+    def x_face(i: int, iy: int) -> int:
+        return iy * (nx + 1) + i
+
+    def y_face(ix: int, j: int) -> int:
+        return n_xf + j * nx + ix
+
+    for t in range(len(tracks)):
+        a, b = int(segments.start[t]), int(segments.start[t + 1])
+        cells = cell[a:b]
+        # entering through the outer boundary (forward sweep)
+        ix, iy = int(cells[0] % nx), int(cells[0] // nx)
+        x0, y0 = tracks.x0[t], tracks.y0[t]
+        if abs(x0) < tol:
+            rows.append((t, 0, x_face(0, iy), 1.0))
+        elif abs(x0 - geometry.width) < tol:
+            rows.append((t, 0, x_face(nx, iy), -1.0))
+        elif abs(y0) < tol:
+            rows.append((t, 0, y_face(ix, 0), 1.0))
+        else:
+            rows.append((t, 0, y_face(ix, ny), -1.0))
+        # between cells; a diagonal step (through a corner) counts as an
+        # x-crossing followed by a y-crossing
+        for k in range(1, b - a):
+            c1, c2 = int(cells[k - 1]), int(cells[k])
+            if c1 == c2:
+                continue
+            ix1, iy1, ix2, iy2 = c1 % nx, c1 // nx, c2 % nx, c2 // nx
+            dx, dy = ix2 - ix1, iy2 - iy1
+            if abs(dx) > 1 or abs(dy) > 1:
+                raise RuntimeError(f"track {t} jumps from cell {c1} to {c2}")
+            if dx:
+                rows.append((t, k, x_face(max(ix1, ix2), iy1), float(dx)))
+            if dy:
+                rows.append((t, k, y_face(ix2, max(iy1, iy2)), float(dy)))
+        # leaving through the outer boundary
+        ix, iy = int(cells[-1] % nx), int(cells[-1] // nx)
+        x1, y1 = tracks.x1[t], tracks.y1[t]
+        n = b - a
+        if abs(x1 - geometry.width) < tol:
+            rows.append((t, n, x_face(nx, iy), 1.0))
+        elif abs(x1) < tol:
+            rows.append((t, n, x_face(0, iy), -1.0))
+        elif abs(y1 - geometry.height) < tol:
+            rows.append((t, n, y_face(ix, ny), 1.0))
+        else:
+            rows.append((t, n, y_face(ix, 0), -1.0))
+    arr = np.array(rows)
+    counts = np.bincount(arr[:, 0].astype(np.int64), minlength=len(tracks))
+    return Crossings(
+        np.concatenate([[0], np.cumsum(counts)]).astype(np.int64),
+        np.ascontiguousarray(arr[:, 1].astype(np.int64)),
+        np.ascontiguousarray(arr[:, 2].astype(np.int64)),
+        np.ascontiguousarray(arr[:, 3]),
+        n_xf + n_yf,
+    )

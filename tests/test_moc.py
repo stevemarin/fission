@@ -133,6 +133,9 @@ def test_model_options_for_macroscopic_data():
             "lattices": {"r": {"pitch": 1.26, "fill": "water", "size": 3}}}  # fmt: skip
     m = parse(base, MODELS_DIR)
     assert m.lattices["r"].pins == (("water",) * 3,) * 3
+    assert (
+        parse(base, MODELS_DIR).lattices["r"].pins == m.lattices["r"].pins
+    )  # input untouched
     bad = {**base, "materials": {"w": {"macroscopic": "steel"}}}
     with pytest.raises(ModelError, match="'steel' is not in the multigroup library"):
         parse(bad, MODELS_DIR)

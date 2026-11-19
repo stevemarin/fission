@@ -1,6 +1,8 @@
 """k-eigenvalue MOC calculation of a model's core (C5G7 by default).
 
-    uv run python -m fission.transport.run c5g7 --azim 32 --spacing 0.05
+    uv run python -m fission.transport.run c5g7                  # accurate: ~1 min
+    uv run python -m fission.transport.run c5g7 --azim 16 --spacing 0.1 --polar 2 \
+        --rings 1 --sectors 4 --outer-ring 0                        # coarse: seconds
 
 For C5G7 the result is compared with the benchmark's multigroup MCNP
 reference (NEA/NSC/DOC(2003)16, Table 3 eigenvalue, Table 4 extreme pin
@@ -85,12 +87,15 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="python -m fission.transport.run", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)  # fmt: skip
     ap.add_argument("model", nargs="?", default="c5g7")
-    ap.add_argument("--azim", type=int, default=32, help="directions in [0, 2 pi)")
-    ap.add_argument("--spacing", type=float, default=0.05, help="track spacing (cm)")
+    ap.add_argument("--azim", type=int, default=64, help="directions in [0, 2 pi)")
+    ap.add_argument("--spacing", type=float, default=0.03, help="track spacing (cm)")
     ap.add_argument("--polar", type=int, default=3, help="polar angles in (0, pi/2)")
-    ap.add_argument("--rings", type=int, default=2, help="equal-area rings per pin")
-    ap.add_argument("--sectors", type=int, default=8)
+    ap.add_argument("--rings", type=int, default=3, help="equal-area rings per pin")
+    ap.add_argument("--sectors", type=int, default=16)
+    ap.add_argument("--outer-ring", type=float, default=0.6,
+                    help="extra coolant ring radius in every cell (cm); 0 for none")  # fmt: skip
     ap.add_argument("--tol", type=float, default=1e-6, help="eigenvalue tolerance")
+    ap.add_argument("--no-cmfd", action="store_true", help="plain power iteration")
     args = ap.parse_args(argv)
     model = load_model(args.model)
     t0 = time.perf_counter()
@@ -98,7 +103,10 @@ def main(argv: list[str] | None = None) -> None:
         m for p in model.pins.values() for m in p.materials[: len(p.radii)]
     }
     geometry = Geometry.from_core(
-        model, dict.fromkeys(pin_materials, args.rings), args.sectors
+        model,
+        dict.fromkeys(pin_materials, args.rings),
+        args.sectors,
+        outer_ring=args.outer_ring or None,
     )
     assert model.core is not None
     tracks = cyclic_tracks(geometry.width, geometry.height, args.azim, args.spacing,
@@ -108,7 +116,10 @@ def main(argv: list[str] | None = None) -> None:
     print(f"{model.name}: {geometry.regions} regions, {len(tracks)} tracks, "
           f"{len(problem.segments.length)} segments, {args.polar} polar angles "
           f"(set-up {t1 - t0:.1f} s)")  # fmt: skip
-    sol = solve(problem, tol_k=args.tol, tol_source=10 * args.tol, verbose=True)
+    sol = solve(problem, tol_k=args.tol, tol_source=10 * args.tol, verbose=True,
+                cmfd=not args.no_cmfd)  # fmt: skip
+    if sol.coarse_iterations:
+        print(f"  CMFD: {sum(sol.coarse_iterations)} coarse outer iterations in all")
     print(f"  {sol.iterations} iterations in {time.perf_counter() - t1:.0f} s; "
           f"balance production/(absorption + leakage) = {sol.balance():.6f}")  # fmt: skip
     if model.name.startswith("C5G7"):

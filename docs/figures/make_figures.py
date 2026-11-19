@@ -911,7 +911,9 @@ def fig_c5g7():
     g = Geometry.from_core(model, rings, sectors=4)
     assert model.core is not None
     tracks = cyclic_tracks(g.width, g.height, 16, 0.1, model.core.boundary)
-    sol = solve(build(model, g, tracks, n_polar=2), tol_k=1e-7, tol_source=1e-6)
+    problem = build(model, g, tracks, n_polar=2)
+    sol = solve(problem, tol_k=1e-7, tol_source=1e-6)  # CMFD
+    plain = solve(problem, tol_k=1e-7, tol_source=1e-6, cmfd=False)
     p = pin_powers(sol, model)[:34, :34]
     fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.0))
     im = axes[0].imshow(np.ma.masked_invalid(p), cmap="viridis", origin="upper",
@@ -927,13 +929,19 @@ def fig_c5g7():
     axes[0].set_ylabel("distance from the top (cm)")
     axes[0].grid(False)
     fig.colorbar(im, ax=axes[0], fraction=0.046)
-    h = np.array(sol.history)
-    axes[1].semilogy(np.arange(1, len(h)), np.abs(h[:-1] - h[-1]) * 1e5, color=C[0])
+    for run, colour, label in [
+        (plain, C[0], "power iteration"),
+        (sol, C[2], "with CMFD"),
+    ]:
+        h = np.array(run.history)
+        axes[1].semilogy(np.arange(1, len(h)), np.abs(h[:-1] - h[-1]) * 1e5, color=colour,
+                         label=f"{label}: {run.iterations} sweeps")  # fmt: skip
     axes[1].axhline(abs(sol.k - C5G7_REFERENCE["k"]) * 1e5, color=C[1], ls="--",
                     label="this tracking vs MCNP reference")  # fmt: skip
+    axes[1].set_xscale("log")
     axes[1].set_xlabel("iteration")
-    axes[1].set_ylabel("|k - k$_{\\mathrm{final}}$| (pcm)")
-    axes[1].set_title(f"power iteration: {sol.iterations} sweeps", fontsize=10)
+    axes[1].set_ylabel(r"|k - k$_{\mathrm{final}}$| (pcm)")
+    axes[1].set_title("convergence of k", fontsize=10)
     axes[1].legend(fontsize=8)
     save(fig, "c5g7")
 

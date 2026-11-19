@@ -24,6 +24,7 @@ SHIELD       ?= nr
 MODEL        ?= vera-p1
 STATE        ?= 1A
 CORE         ?= c5g7
+MOC_ARGS     ?=
 AZIM         ?= 64
 SPACING      ?= 0.05
 
@@ -133,8 +134,8 @@ groups:  ## build (or load) multigroup libraries, XMAS-172, free gas + H in H2O
 pincell:  ## k-infinity of a homogenized model lattice (CASES="1A" SHIELD=nr|none MODEL=vera-p1)
 	$(PY) -m fission.pincell.run $(CASES) --shielding $(SHIELD) --model $(MODEL)
 
-moc:  ## MOC k-eigenvalue of a model core vs its reference (CORE=c5g7 AZIM=32 SPACING=0.05)
-	$(PY) -m fission.transport.run $(CORE) --azim $(AZIM) --spacing $(SPACING)
+moc:  ## MOC + CMFD eigenvalue of a model core vs its reference (CORE=c5g7 MOC_ARGS="--azim 128")
+	$(PY) -m fission.transport.run $(CORE) $(MOC_ARGS)
 
 tracks:  ## cyclic tracks + ray tracing of a model lattice (MODEL=vera-p1 AZIM=64 SPACING=0.01)
 	$(PY) -m fission.transport $(MODEL) --azim $(AZIM) --spacing $(SPACING)

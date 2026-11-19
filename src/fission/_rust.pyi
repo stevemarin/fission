@@ -149,4 +149,27 @@ def moc_sweep(
     source: Array,
     psi_in: Array,
     groups: int,
-) -> tuple[Array, Array, float]: ...
+    faces: tuple[
+        npt.NDArray[np.int64], npt.NDArray[np.int64], npt.NDArray[np.int64], Array, int
+    ]
+    | None = None,
+) -> tuple[Array, Array, float, Array]: ...
+def cmfd_solve(
+    groups: int,
+    ny: int,
+    nx: int,
+    diag: Array,
+    east: Array,
+    west: Array,
+    north: Array,
+    south: Array,
+    inscatter: Array,
+    fission: Array,
+    chi: Array,
+    phi: Array,
+    k: float,
+    tol: float = 1e-10,
+    max_outer: int = 5000,
+    inner: int = 4,
+    omega: float = 1.5,
+) -> tuple[float, Array, int]: ...
