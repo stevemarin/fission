@@ -1,0 +1,447 @@
+"""Read a model from a TOML file and check it.
+
+Every error names where in the file it is, e.g.
+
+    vera-p1.toml: lattices.cell.map row 2: 3 entries, row 1 has 2
+
+Checks: unknown keys (typos), wrong types, missing or unknown references
+(a pin that names an undefined material, ...), ring radii that do not
+increase or do not fit in the cell, ragged maps, isotopic percentages that
+do not add up to 100, isotopes that do not belong to their element, and
+options that are reserved but not implemented yet (hexagonal geometry,
+eighth-core symmetry).
+"""
+
+from __future__ import annotations
+
+import itertools
+import tomllib
+from pathlib import Path
+from typing import Any, NoReturn, cast
+
+from .materials import element_of
+from .spec import (
+    Assembly,
+    AxialSegment,
+    Core,
+    Isotopics,
+    Lattice,
+    Material,
+    Model,
+    Pin,
+    Reference,
+    State,
+)
+
+FORMAT = 1
+MODELS_DIR = Path(__file__).resolve().parents[3] / "models"
+
+
+class ModelError(ValueError):
+    pass
+
+
+_REQUIRED: Any = object()
+
+
+class _Table:
+    """A TOML table being read. Keys that are never asked for are errors."""
+
+    def __init__(self, data: object, where: str):
+        if not isinstance(data, dict):
+            _fail(where, f"expected a table, got {_kind(data)}")
+        self.data: dict[str, Any] = data
+        self.where = where
+        self.known: set[str] = set()
+
+    def at(self, key: str) -> str:
+        return f"{self.where}.{key}" if self.where else key
+
+    def has(self, key: str) -> bool:
+        self.known.add(key)
+        return key in self.data
+
+    def raw(self, key: str, default: Any = _REQUIRED) -> Any:
+        self.known.add(key)
+        if key not in self.data:
+            if default is _REQUIRED:
+                _fail(self.where or "(top level)", f"missing required key '{key}'")
+            return default
+        return self.data[key]
+
+    def number(
+        self, key: str, default: Any = _REQUIRED, minimum: float | None = 0.0
+    ) -> float:
+        v = self.raw(key, default)
+        if v is default and default is not _REQUIRED:
+            return cast(float, v)
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            _fail(self.at(key), f"expected a number, got {_kind(v)}")
+        if minimum is not None and not v > minimum:
+            _fail(self.at(key), f"must be > {minimum:g}, got {v:g}")
+        return float(v)
+
+    def string(
+        self, key: str, default: Any = _REQUIRED, choices: tuple[str, ...] = ()
+    ) -> str:
+        v = self.raw(key, default)
+        if v is default and default is not _REQUIRED:
+            return cast(str, v)
+        if not isinstance(v, str):
+            _fail(self.at(key), f"expected a string, got {_kind(v)}")
+        if choices and v not in choices:
+            _fail(self.at(key), f"{v!r} is not one of {', '.join(map(repr, choices))}")
+        return v
+
+    def table(self, key: str, default: Any = _REQUIRED) -> _Table:
+        v = self.raw(key, default)
+        return _Table(v, self.at(key))
+
+    def numbers(self, key: str) -> dict[str, float]:
+        """A table of non-negative numbers (nuclide -> value, element -> count)."""
+        t = self.table(key)
+        out = {k: t.number(k, minimum=None) for k in t.data}
+        for k, v in out.items():
+            if v < 0:
+                _fail(t.at(k), f"must be >= 0, got {v:g}")
+        if not out:
+            _fail(t.where, "is empty")
+        return out
+
+    def finish(self) -> None:
+        extra = sorted(set(self.data) - self.known)
+        if extra:
+            expected = ", ".join(sorted(self.known)) or "nothing"
+            _fail(
+                self.where or "(top level)",
+                f"unknown key(s) {extra}; expected {expected}",
+            )
+
+
+def _kind(v: object) -> str:
+    return {dict: "a table", list: "an array", str: "a string", bool: "a boolean"}.get(
+        type(v), type(v).__name__
+    )
+
+
+def _fail(where: str, message: str) -> NoReturn:
+    raise ModelError(f"{where}: {message}")
+
+
+def _reserved(where: str, value: str, implemented: tuple[str, ...]) -> None:
+    if value not in implemented:
+        _fail(
+            where,
+            f"{value!r} is reserved but not implemented yet (have: {', '.join(implemented)})",
+        )
+
+
+# ---------------------------------------------------------------- materials
+def _isotopics(t: _Table, element: str, basis: str) -> Isotopics:
+    percent = t.numbers(element)
+    for nuclide in percent:
+        try:
+            owner = element_of(nuclide)
+        except ValueError:
+            _fail(f"{t.at(element)}.{nuclide}", "not a nuclide name (like 'U235')")
+        if owner != element:
+            _fail(f"{t.at(element)}.{nuclide}", f"is not an isotope of {element}")
+    total = sum(percent.values())
+    if abs(total - 100.0) > 1e-3:
+        _fail(t.at(element), f"percentages add up to {total:g}, not 100")
+    return Isotopics("atom" if basis == "atom_percent" else "weight", percent)
+
+
+def _element_isotopics(m: _Table) -> dict[str, Isotopics]:
+    out: dict[str, Isotopics] = {}
+    for basis in ("atom_percent", "weight_percent"):
+        if m.has(basis):
+            t = m.table(basis)
+            for element in t.data:
+                if element in out:
+                    _fail(t.at(element), "isotopics given both by atom and by weight")
+                out[element] = _isotopics(t, element, basis)
+            t.finish()
+    return out
+
+
+def _material(name: str, m: _Table) -> Material:
+    temperature: Any = m.string("temperature", choices=("fuel", "moderator"))
+    thermal = None
+    if m.has("thermal"):
+        t = m.table("thermal")
+        thermal = {k: t.string(k) for k in t.data}
+    if m.has("atom_densities"):
+        for key in (
+            "density",
+            "formula",
+            "atom_percent",
+            "weight_percent",
+            "soluble_boron",
+        ):
+            if m.has(key):
+                _fail(m.at(key), "not allowed together with atom_densities")
+        n = m.numbers("atom_densities")
+        for nuclide in n:
+            try:
+                element_of(nuclide)
+            except ValueError:
+                _fail(
+                    m.at(f"atom_densities.{nuclide}"),
+                    "not a nuclide name (like 'U235')",
+                )
+        material = Material(name, temperature, atom_densities=n, thermal=thermal)
+    else:
+        rho: float | str
+        if isinstance(m.raw("density"), str):
+            rho = m.string("density", choices=("moderator",))
+        else:
+            rho = m.number("density")
+        formula = m.numbers("formula")
+        isotopics = _element_isotopics(m)
+        for element in formula:
+            if element not in isotopics:
+                _fail(m.at("formula"), f"no isotopics for element {element!r} "
+                      f"(add atom_percent.{element} or weight_percent.{element})")  # fmt: skip
+        for element in isotopics:
+            if element not in formula:
+                _fail(
+                    m.where, f"isotopics for {element!r}, which is not in the formula"
+                )
+        boron = None
+        if m.has("soluble_boron"):
+            b = m.table("soluble_boron")
+            found = _element_isotopics(b)
+            boron = found.get("B")
+            if boron is None or len(found) != 1:
+                _fail(b.where, "expected atom_percent.B or weight_percent.B only")
+            b.finish()
+            if rho != "moderator":
+                _fail(
+                    m.at("soluble_boron"),
+                    'needs density = "moderator" (boron is a state variable)',
+                )
+        material = Material(
+            name, temperature, density=cast(Any, rho), formula=formula,
+            isotopics=isotopics, soluble_boron=boron, thermal=thermal,
+        )  # fmt: skip
+    m.finish()
+    return material
+
+
+def _nuclides(material: Material) -> set[str]:
+    if material.atom_densities is not None:
+        return set(material.atom_densities)
+    out = {n for iso in (material.isotopics or {}).values() for n in iso.percent}
+    if material.soluble_boron is not None:
+        out |= set(material.soluble_boron.percent)
+    return out
+
+
+# ---------------------------------------------------------------- geometry
+def _grid(
+    t: _Table, legend: dict[str, str | None]
+) -> tuple[tuple[str | None, ...], ...]:
+    text = t.string("map")
+    rows = [line.split() for line in text.splitlines() if line.strip()]
+    if not rows:
+        _fail(t.at("map"), "is empty")
+    for i, row in enumerate(rows, 1):
+        if len(row) != len(rows[0]):
+            _fail(
+                t.at("map"), f"row {i} has {len(row)} entries, row 1 has {len(rows[0])}"
+            )
+        for token in row:
+            if token not in legend:
+                _fail(t.at("map"), f"row {i}: {token!r} is not in the legend")
+    return tuple(tuple(legend[token] for token in row) for row in rows)
+
+
+def _legend(t: _Table) -> dict[str, str | None]:
+    lt = t.table("legend")
+    legend: dict[str, str | None] = {k: lt.string(k) for k in lt.data}
+    lt.finish()
+    if "." in legend:
+        _fail(lt.at("."), "'.' is reserved for an empty position")
+    return legend
+
+
+def _pin(name: str, t: _Table, materials: dict[str, Material]) -> Pin:
+    radii_raw = t.raw("radii")
+    names = t.raw("materials")
+    if not isinstance(radii_raw, list) or not all(
+        isinstance(r, (int, float)) and not isinstance(r, bool) for r in radii_raw
+    ):
+        _fail(t.at("radii"), "expected an array of numbers")
+    if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+        _fail(t.at("materials"), "expected an array of material names")
+    radii = tuple(float(r) for r in radii_raw)
+    if any(r <= 0 for r in radii) or any(b <= a for a, b in itertools.pairwise(radii)):
+        _fail(t.at("radii"), f"must be positive and increasing, got {list(radii)}")
+    if len(names) != len(radii) + 1:
+        _fail(t.at("materials"), f"{len(radii)} radii need {len(radii) + 1} materials "
+              f"(the last fills the cell), got {len(names)}")  # fmt: skip
+    for n in names:
+        if n not in materials:
+            _fail(t.at("materials"), f"unknown material {n!r}")
+    t.finish()
+    return Pin(name, radii, tuple(names))
+
+
+def _lattice(
+    name: str, t: _Table, materials: dict[str, Material], pins: dict[str, Pin]
+) -> Lattice:
+    geometry = t.string("geometry", "square")
+    _reserved(t.at("geometry"), geometry, ("square",))
+    if t.has("material"):
+        for key in ("pitch", "legend", "map"):
+            if t.has(key):
+                _fail(
+                    t.at(key),
+                    "not allowed in a homogeneous lattice (one with 'material')",
+                )
+        material = t.string("material")
+        if material not in materials:
+            _fail(t.at("material"), f"unknown material {material!r}")
+        t.finish()
+        return Lattice(name, "square", material=material)
+    pitch = t.number("pitch")
+    legend = _legend(t)
+    for key, pin in legend.items():
+        if pin not in pins:
+            _fail(t.at(f"legend.{key}"), f"unknown pin {pin!r}")
+        if pins[pin].radii[-1] > pitch / 2:
+            _fail(t.at(f"legend.{key}"), f"pin {pin!r} (radius {pins[pin].radii[-1]:g} cm) "
+                  f"does not fit in the pitch {pitch:g} cm")  # fmt: skip
+    grid = _grid(t, legend)
+    if len(grid) != len(grid[0]):
+        _fail(t.at("map"), f"must be square, got {len(grid)} rows of {len(grid[0])}")
+    t.finish()
+    return Lattice(name, "square", pitch, cast(tuple[tuple[str, ...], ...], grid))
+
+
+def _assembly(name: str, t: _Table, lattices: dict[str, Lattice]) -> Assembly:
+    axial = t.raw("axial")
+    if not isinstance(axial, list) or not axial:
+        _fail(t.at("axial"), "expected a non-empty array of {lattice, height} tables")
+    segments = []
+    for i, entry in enumerate(axial, 1):
+        s = _Table(entry, f"{t.at('axial')}[{i}]")
+        lattice = s.string("lattice")
+        if lattice not in lattices:
+            _fail(s.at("lattice"), f"unknown lattice {lattice!r}")
+        segments.append(AxialSegment(lattice, s.number("height")))
+        s.finish()
+    t.finish()
+    return Assembly(name, tuple(segments))
+
+
+def _core(
+    t: _Table, assemblies: dict[str, Assembly], lattices: dict[str, Lattice]
+) -> Core:
+    geometry = t.string("geometry", "square")
+    _reserved(t.at("geometry"), geometry, ("square",))
+    symmetry = t.string("symmetry", "full")
+    _reserved(t.at("symmetry"), symmetry, ("full", "quarter"))
+    pitch = t.number("assembly_pitch")
+    legend = _legend(t)
+    for key, a in legend.items():
+        if a not in assemblies:
+            _fail(t.at(f"legend.{key}"), f"unknown assembly {a!r}")
+    legend["."] = None
+    grid = _grid(t, legend)
+    used = {a for row in grid for a in row if a is not None}
+    heights = {a: assemblies[a].height for a in used}
+    if len(set(heights.values())) > 1:
+        _fail(t.at("map"), "assemblies in the core must have the same total height, got "
+              + ", ".join(f"{a} {h:g} cm" for a, h in sorted(heights.items())))  # fmt: skip
+    for a in sorted(used):
+        for s in assemblies[a].segments:
+            width = lattices[s.lattice].width
+            if width is not None and width > pitch:
+                _fail(t.at("assembly_pitch"), f"lattice {s.lattice!r} of assembly {a!r} "
+                      f"is {width:g} cm wide, more than the assembly pitch {pitch:g} cm")  # fmt: skip
+    t.finish()
+    return Core(cast(Any, geometry), cast(Any, symmetry), pitch, grid)
+
+
+def _state(name: str, t: _Table) -> State:
+    reference = None
+    if t.has("reference"):
+        r = t.table("reference")
+        reference = Reference(
+            r.number("keff"), r.number("sigma", minimum=None), r.string("source")
+        )
+        r.finish()
+    state = State(
+        name,
+        t.number("fuel_temperature"),
+        t.number("moderator_temperature"),
+        t.number("moderator_density"),
+        t.number("boron_ppm", minimum=None),
+        reference,
+    )
+    if state.boron_ppm < 0:
+        _fail(t.at("boron_ppm"), "must be >= 0")
+    t.finish()
+    return state
+
+
+# ---------------------------------------------------------------- model
+def _section(top: _Table, key: str) -> _Table:
+    return top.table(key, {}) if top.has(key) else _Table({}, key)
+
+
+def parse(data: dict[str, Any]) -> Model:
+    """Build a Model from parsed TOML (a dict), checking everything."""
+    top = _Table(data, "")
+    head = top.table("model")
+    fmt = head.raw("format")
+    if fmt != FORMAT:
+        _fail(head.at("format"), f"this code reads format {FORMAT}, got {fmt!r}")
+    name = head.string("name")
+    description = head.string("description", "")
+    head.finish()
+
+    sec = _section(top, "materials")
+    materials = {k: _material(k, sec.table(k)) for k in sec.data}
+    for mat in materials.values():
+        for nuclide in mat.thermal or {}:
+            if nuclide not in _nuclides(mat):
+                _fail(
+                    f"materials.{mat.name}.thermal.{nuclide}",
+                    "nuclide not in this material",
+                )
+    sec = _section(top, "pins")
+    pins = {k: _pin(k, sec.table(k), materials) for k in sec.data}
+    sec = _section(top, "lattices")
+    lattices = {k: _lattice(k, sec.table(k), materials, pins) for k in sec.data}
+    sec = _section(top, "assemblies")
+    assemblies = {k: _assembly(k, sec.table(k), lattices) for k in sec.data}
+    core = _core(top.table("core"), assemblies, lattices) if top.has("core") else None
+    sec = _section(top, "states")
+    states = {k: _state(k, sec.table(k)) for k in sec.data}
+    for mat in materials.values():
+        if mat.density == "moderator" and not states:
+            _fail(
+                f"materials.{mat.name}.density", '"moderator" needs at least one state'
+            )
+    top.finish()
+    return Model(name, description, materials, pins, lattices, assemblies, core, states)
+
+
+def load_model(path: str | Path) -> Model:
+    """Read and check a model file. A bare name is looked up in models/."""
+    p = Path(path)
+    if not p.exists() and p.parent == Path(".") and (MODELS_DIR / p).exists():
+        p = MODELS_DIR / p
+    elif not p.exists() and (MODELS_DIR / f"{p}.toml").exists():
+        p = MODELS_DIR / f"{p}.toml"
+    try:
+        with open(p, "rb") as f:
+            data = tomllib.load(f)
+        return parse(data)
+    except tomllib.TOMLDecodeError as e:
+        raise ModelError(f"{p.name}: {e}") from None
+    except ModelError as e:
+        raise ModelError(f"{p.name}: {e}") from None

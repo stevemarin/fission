@@ -1,0 +1,116 @@
+# VERA Core Physics Benchmark Progression Problem 1: one PWR fuel rod in an
+# infinite lattice (2D, reflective on all sides).
+#
+# Source: A. T. Godfrey, "VERA Core Physics Benchmark Progression Problem
+# Specifications", CASL-U-2012-0131-004 Rev. 4 (2014), free at
+# https://corephysics.com/docs/CASL-U-2012-0131-004.pdf
+#   Table 1     rod geometry
+#   Table P1-1  states (temperatures, moderator density)
+#   Table P1-2  fuel density, boron concentration
+#   Table P1-3  uranium isotopics (weight percent)
+#   Table P1-4  number densities (used directly for gap and clad; the fuel
+#               and moderator are computed from Tables P1-2/P1-3 here and
+#               agree with P1-4 to its printed precision, see tests)
+#   Table P1-5  CE KENO-VI reference eigenvalues
+#
+# Units: cm, g/cm3, K, atoms per barn-cm, ppm by weight.
+
+[model]
+format = 1
+name = "VERA problem 1"
+description = "Westinghouse 17x17 fuel rod at beginning of life, 3.1 wt% U-235"
+
+# ---------------------------------------------------------------- materials
+[materials.fuel]                    # UO2, 10.257 g/cm3 (Table P1-2)
+temperature = "fuel"
+density = 10.257
+formula = { U = 1, O = 2 }
+weight_percent.U = { U234 = 0.0263, U235 = 3.1, U236 = 0.0143, U238 = 96.8594 }   # Table P1-3
+atom_percent.O = { O16 = 100.0 }
+
+[materials.gap]                     # helium at nominal density (Table P1-4)
+temperature = "moderator"           # Table P1-1: clad (and gap) at the moderator temperature
+atom_densities = { He4 = 2.68714e-05 }
+
+[materials.clad]                    # Zircaloy-4 (Table P1-4)
+temperature = "moderator"
+[materials.clad.atom_densities]
+Zr90 = 2.18865e-02
+Zr91 = 4.77292e-03
+Zr92 = 7.29551e-03
+Zr94 = 7.39335e-03
+Zr96 = 1.19110e-03
+Sn112 = 4.68066e-06
+Sn114 = 3.18478e-06
+Sn115 = 1.64064e-06
+Sn116 = 7.01616e-05
+Sn117 = 3.70592e-05
+Sn118 = 1.16872e-04
+Sn119 = 4.14504e-05
+Sn120 = 1.57212e-04
+Sn122 = 2.23417e-05
+Sn124 = 2.79392e-05
+Fe54 = 8.68307e-06
+Fe56 = 1.36306e-04
+Fe57 = 3.14789e-06
+Fe58 = 4.18926e-07
+Cr50 = 3.30121e-06
+Cr52 = 6.36606e-05
+Cr53 = 7.21860e-06
+Cr54 = 1.79686e-06
+Hf174 = 3.54138e-09
+Hf176 = 1.16423e-07
+Hf177 = 4.11686e-07
+Hf178 = 6.03806e-07
+Hf179 = 3.01460e-07
+Hf180 = 7.76449e-07
+
+[materials.moderator]               # borated water; density and boron from the state
+temperature = "moderator"
+density = "moderator"
+formula = { H = 2, O = 1 }
+atom_percent.H = { H1 = 100.0 }
+atom_percent.O = { O16 = 100.0 }
+soluble_boron.atom_percent.B = { B10 = 19.9, B11 = 80.1 }   # 19.9 at% B-10 (Table 18 note)
+thermal = { H1 = "HinH2O" }         # S(alpha, beta) of hydrogen in water
+
+# ---------------------------------------------------------------- pins (Table 1)
+[pins.fuel_rod]
+radii = [0.4096, 0.418, 0.475]      # pellet, clad inner, clad outer
+materials = ["fuel", "gap", "clad", "moderator"]
+
+# ---------------------------------------------------------------- lattices
+[lattices.cell]                     # a single cell; reflective boundaries make it infinite
+pitch = 1.26
+legend = { F = "fuel_rod" }
+map = "F"
+
+# ---------------------------------------------------------------- states (Tables P1-1, P1-5)
+# 1A is hot zero power. 1B-1D: 600 K water, fuel at 600, 900, 1200 K.
+[states.1A]
+fuel_temperature = 565.0
+moderator_temperature = 565.0
+moderator_density = 0.743
+boron_ppm = 1300
+reference = { keff = 1.187038, sigma = 0.000054, source = "Table P1-5: CE KENO-VI, ENDF/B-VII.0, heterogeneous cell" }
+
+[states.1B]
+fuel_temperature = 600.0
+moderator_temperature = 600.0
+moderator_density = 0.661
+boron_ppm = 1300
+reference = { keff = 1.182149, sigma = 0.000068, source = "Table P1-5: CE KENO-VI, ENDF/B-VII.0, heterogeneous cell" }
+
+[states.1C]
+fuel_temperature = 900.0
+moderator_temperature = 600.0
+moderator_density = 0.661
+boron_ppm = 1300
+reference = { keff = 1.171722, sigma = 0.000072, source = "Table P1-5: CE KENO-VI, ENDF/B-VII.0, heterogeneous cell" }
+
+[states.1D]
+fuel_temperature = 1200.0
+moderator_temperature = 600.0
+moderator_density = 0.661
+boron_ppm = 1300
+reference = { keff = 1.162603, sigma = 0.000071, source = "Table P1-5: CE KENO-VI, ENDF/B-VII.0, heterogeneous cell" }

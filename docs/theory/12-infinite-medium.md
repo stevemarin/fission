@@ -25,8 +25,10 @@ infinite lattice:
 with the states (fuel / moderator temperature, water density) 1A: 565 / 565 K,
 0.743 g/cm³ (hot zero power); 1B: 600 / 600 K, 0.661 g/cm³; 1C and 1D: as
 1B with fuel at 900 and 1200 K. The specification lists the number density
-of every isotope in every region (its Table P1-4), which this code uses
-directly. Homogenizing multiplies each by the region's share of the cell
+of every isotope in every region (its Table P1-4). This code uses those for
+the gap and clad, and computes the fuel and water from their mass
+densities, isotopics and boron content, agreeing with the table to its
+printed precision (chapter 13). Homogenizing multiplies each by the region's share of the cell
 area: the fuel occupies 33.2% of the cell, the water 55.4%. The same
 nuclide in two regions (oxygen in fuel and water) stays two components,
 because they have different temperatures and scattering laws.
@@ -36,7 +38,8 @@ R-matrix-limited resonance format (LRF = 7), Fe-58 an unresolved-range form,
 and Cr-53 a channel-spin convention that this code does not process yet.
 Together they are 0.04% of the cladding atoms. Everything else, 35
 components from 34 nuclides, is processed from ENDF/B-VIII.1 at the
-problem's temperatures, with S(α,β) for hydrogen in water.
+problem's temperatures, with S(α,β) for hydrogen in water. The geometry,
+compositions and states are read from the model file of chapter 13.
 
 ## The infinite-medium equations
 
@@ -190,8 +193,8 @@ correspondingly smaller than the textbook resonance escape probability.
 * [[Bell & Glasstone](#ref-bell)] §8.3, the narrow-resonance approximation;
   [[Duderstadt & Hamilton](#ref-dh)] and [[Lamarsh](#ref-lamarsh)], the four-factor
   formula.
-* Code: [`vera.py`](../../src/fission/pincell/vera.py) (geometry, number
-  densities, reference values), [`infinite.py`](../../src/fission/pincell/infinite.py)
+* Code: [`vera-p1.toml`](../../models/vera-p1.toml) (geometry, compositions,
+  states and reference values; chapter 13), [`infinite.py`](../../src/fission/pincell/infinite.py)
   (mixture, eigenvalue, four factors), [`infinite.rs`](../../rust/src/infinite.rs)
   (LU and power iteration), [`run.py`](../../src/fission/pincell/run.py)
   (NR flux shape; `make pincell CASES=1A SHIELD=nr`).

@@ -16,8 +16,8 @@ from fission.endf.distributions.angular import (
 from fission.endf.distributions.incident import IncidentGrid
 from fission.endf.distributions.mf6 import energy_angle
 from fission.endf.interpolation import Tabulated1D
+from fission.model import Component
 from fission.pincell.infinite import Mixture, solve
-from fission.pincell.vera import Component
 from fission.processing.groupr import (
     GroupLibrary,
     _angular_for_rust,

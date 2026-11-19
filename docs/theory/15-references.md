@@ -96,6 +96,13 @@ source or a standard text.
   eigenvalues (Table P1-5). <https://corephysics.com/docs/CASL-U-2012-0131-004.pdf>
   **(free)**. Inputs: <https://github.com/CASL/VERAin> **(free)**
 
+## Software {.unnumbered}
+
+- []{#ref-armi}**[ARMI]** TerraPower, *ARMI: the Advanced Reactor Modeling
+  Interface*, an open-source reactor analysis automation framework
+  (Apache-2.0). <https://github.com/terrapower/armi>,
+  documentation <https://terrapower.github.io/armi/> **(free)**
+
 ## Reactor physics {.unnumbered}
 
 - []{#ref-bell}**[Bell & Glasstone]** G. I. Bell, S. Glasstone, *Nuclear

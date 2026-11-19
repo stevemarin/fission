@@ -22,9 +22,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from fission.model import Component
 from fission.processing.groupr import GroupLibrary
-
-from .vera import Component
 
 THERMAL_CUTOFF = 0.625  # eV, the cadmium-like boundary of two-group theory
 

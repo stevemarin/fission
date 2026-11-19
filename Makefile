@@ -21,6 +21,8 @@ T            ?= 293.6
 WATER_TEMPS  ?= 293.6 600 900
 CASES        ?= 1A 1B 1C 1D
 SHIELD       ?= nr
+MODEL        ?= vera-p1
+STATE        ?= 1A
 
 # Independent checking tools (NJOY, OpenMC): prebuilt conda-forge packages in
 # an isolated micromamba environment under tools/ (no sudo; separate from uv).
@@ -36,7 +38,7 @@ MAMBA_URL    := https://github.com/mamba-org/micromamba-releases/releases/downlo
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        tools njoy openmc tools-check clean-tools data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
+        tools njoy openmc tools-check clean-tools model data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -125,8 +127,11 @@ groups:  ## build (or load) multigroup libraries, XMAS-172, free gas + H in H2O
 	$(PY) -m fission.processing.library $(PIN_NUCLIDES) --temps $(TEMPS) --quiet
 	$(PY) -m fission.processing.library H1 --thermal HinH2O --temps $(WATER_TEMPS) --quiet
 
-pincell:  ## k-infinity of the homogenized VERA problem 1 cell (CASES="1A" SHIELD=nr|none)
-	$(PY) -m fission.pincell.run $(CASES) --shielding $(SHIELD)
+pincell:  ## k-infinity of a homogenized model lattice (CASES="1A" SHIELD=nr|none MODEL=vera-p1)
+	$(PY) -m fission.pincell.run $(CASES) --shielding $(SHIELD) --model $(MODEL)
+
+model:  ## check a model file and print number densities (MODEL=vera-p1 STATE=1A)
+	$(PY) -m fission.model $(MODEL) --state $(STATE)
 
 clean-tables:  ## delete all cached pointwise, broadened and multigroup tables
 	rm -rf endf-data/pointwise endf-data/doppler endf-data/groups
