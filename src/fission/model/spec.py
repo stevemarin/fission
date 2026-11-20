@@ -89,13 +89,16 @@ class Lattice:
     pitch: float | None = None  # pin pitch, cm
     pins: tuple[tuple[str, ...], ...] | None = None  # rows of pin names
     material: str | None = None  # homogeneous slice (reflectors)
+    gap: float = (
+        0.0  # water around the pins on every side (half the inter-assembly gap)
+    )
 
     @property
     def width(self) -> float | None:
         """Side length (cm) of a pin lattice; None for a homogeneous slice."""
         if self.pins is None or self.pitch is None:
             return None
-        return len(self.pins) * self.pitch
+        return len(self.pins) * self.pitch + 2 * self.gap
 
 
 @dataclass(frozen=True)

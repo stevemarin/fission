@@ -6,7 +6,8 @@ fine groups g in G:
 
     phi_G = sum_g phi_g,          Sigma_x,G = sum_g Sigma_x,g phi_g / phi_G,
     Sigma_s,G->G' = sum_{g in G} sum_{g' in G'} Sigma_s0,g->g' phi_g / phi_G,
-    chi_G = sum_g chi_g,          D_G = sum_g (J_g / B) / phi_G.
+    chi_G = sum_g chi_g,          D_G = sum_g (J_g / B) / phi_G,
+    f_G = sum_g phi_s,g / sum_g phi_g (lattice fluxes: discontinuity factors).
 
 D_G is current-weighted, so the leakage D_G B^2 phi_G of the few-group
 diffusion equation is exactly the B1 leakage sum_g B J_g. With the critical
@@ -114,6 +115,12 @@ def condense(
     for g in range(c.groups.size):
         sigma_s[owner[g]] += np.bincount(owner, c.scatter[0][g], size) * phi[g]
     sigma_s /= flux[:, None]
+    # discontinuity factors: surface over average flux of the lattice itself
+    adf = (
+        np.bincount(owner, c.surface, size) / np.bincount(owner, c.flux, size)
+        if c.surface is not None
+        else np.ones(size)
+    )
     return FewGroup(
         c.name,
         tuple(float(fine[i]) for i in cuts),
@@ -127,4 +134,5 @@ def condense(
         average(c.kappa_fission),
         np.bincount(owner, c.chi, size),
         weight.b2,
+        adf,
     )

@@ -9,26 +9,23 @@ chapter 13 describes the reactor model they are applied to; chapter 14
 builds the geometry of the transport solver, chapter 15 the solver itself,
 chapter 16 shields the cross sections of a real pin cell, and chapter 17
 checks that pin against continuous-energy Monte Carlo on the same data and
-corrects it (SPH factors, rings in the pellet), and chapter 18 condenses it
-into two-group constants for a nodal code. This chapter previews what
-remains.
+corrects it (SPH factors, rings in the pellet), chapter 18 condenses it
+into two-group constants for a nodal code, and chapter 19 adds a second
+transport method (collision probabilities), the clad to the slowing-down
+calculation, and the 17×17 assembly. This chapter previews what remains.
 
-## Beyond chapter 18
+## Beyond chapter 19
 
-The pin cell is now within 160–350 pcm of OpenMC on the same data, and
-the error sits in U-238 capture in resonances with large neutron widths.
-In rough order of importance:
-
-* **The clad in the slowing-down calculation.** Fuel, gap and clad should
-  be marched together, each with its own composition, coupled by
-  first-collision probabilities computed at every energy instead of
-  tabulated against one cross section. This is the pointwise
-  collision-probability method, and it is also the cross-check of MOC
-  planned for step C4.
-* **The assembly.** Chapter 18 homogenizes one pin in an infinite lattice.
-  A 17×17 assembly with guide tubes (C4) is the real node of a core
-  calculation. Its constants need discontinuity factors, which cancel for
-  identical cells but not between different assemblies.
+* **The assembly at converged tracking.** The pin cell's defaults (256
+  directions, 10 rings) are too expensive for 17×17. Rod-by-rod tracking
+  (modular rays) or a coarser azimuthal set with more rings would bring the
+  assembly to the same accuracy.
+* **The slowing-down march with moving hydrogen.** The march still treats
+  hydrogen at rest above 1 eV. U-238 capture at 4–10 eV is 0.5% low, and at
+  25–100 eV 0.5–0.7% high.
+* **Rod-by-rod shielding.** Every rod of the assembly shares one shielded
+  library. Rods next to guide tubes and at the edge see more water. Their
+  own Dancoff factors would refine the pin powers.
 * **Branches and tables.** The core needs constants at every fuel
   temperature, water density and boron concentration (M2–M3), and they
   must get to the nodal code (M4).

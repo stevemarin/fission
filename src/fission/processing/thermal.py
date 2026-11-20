@@ -41,6 +41,11 @@ from .weights import Weight
 
 SQRT_4PI = math.sqrt(4.0 * math.pi)
 THERMAL_CUTOFF = 4.0  # eV: an XMAS-172 boundary; MF7 data for water reach 10 eV
+# Nuclides lighter than a neutron (H-1) scatter on moving targets above the
+# thermal range as well, as in OpenMC (targets at rest only if awr > 1): the
+# epithermal flux is higher by about 2.7 kT/E (chapter 19). A free gas up to
+# 1 keV leaves less than 1e-4 of that.
+LIGHT_FREE_GAS_TOP = 1000.0  # eV
 
 
 @dataclass(frozen=True)

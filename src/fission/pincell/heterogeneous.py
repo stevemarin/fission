@@ -42,6 +42,8 @@ from .run import UNSUPPORTED
 from .shielding import (
     Escape,
     collision_matrix,
+    coupled_collisions,
+    coupled_flux,
     dancoff,
     escape_probability,
     potential_scattering,
@@ -54,6 +56,15 @@ from .shielding import (
 )
 
 RESONANT = ("fuel", "clad")
+MOVING = ("U238",)  # nuclides that scatter on moving targets with moving_targets
+# Default discretization, converged on VERA 1D to about 20 pcm (docs ch. 19):
+# 256 azimuthal directions over 2 pi, 0.02 cm tracks, 3 Tabuchi-Yamamoto
+# polar angles (the default of `tracking`), 10 equal-area pellet rings.
+# The old 64 / 0.02 / 3 Gauss-Legendre / 3 rings was about 270 pcm low.
+AZIM = 256
+SPACING = 0.02
+POLAR = 3
+FUEL_RINGS = 10
 
 
 def macroscopic(name: str, items: list[tuple[float, GroupLibrary]]) -> MacroXS:
@@ -119,15 +130,17 @@ def run(
     shielding: str = "sd",
     model: Model | str = "vera-p1",
     lattice: str = "cell",
-    azim: int = 64,
-    spacing: float = 0.02,
-    polar: int = 3,
-    fuel_rings: int = 3,
+    azim: int = AZIM,
+    spacing: float = SPACING,
+    polar: int = POLAR,
+    fuel_rings: int = FUEL_RINGS,
     sectors: int = 8,
     outer_ring: float | None = 0.6,
     resonant: tuple[str, ...] = RESONANT,
     ring_shielding: bool = False,
     sph: bool = False,
+    coupled_clad: bool = False,
+    moving_targets: bool = False,
     verbose: bool = False,
 ) -> Result:
     """k-infinity of a model pin cell with MOC.
@@ -138,6 +151,12 @@ def run(
     sph (cp and sd only): superhomogenization factors (``sph_factors``) for
     every shielded region, so that the multigroup flux of the self-shielding
     model reproduces its group-averaged pointwise flux.
+    coupled_clad (sd with ring_shielding): the pellet rings and the clad
+    slow down together (``coupled_flux``), instead of the clad being part of
+    the narrow-resonance outside of the fuel and getting its own NR shape.
+    moving_targets (sd): U-238 scatters on nuclei in thermal motion at the
+    fuel temperature below 1 keV (``moving.free_gas_kernel``), instead of
+    on nuclei at rest.
     """
     m = load_model(model) if isinstance(model, str) else model
     st = m.states[state]
@@ -155,7 +174,9 @@ def run(
     escapes: dict[str, Escape] = {}
     backgrounds: dict[str, dict[str, float]] = {}
     shapes: dict[str, tuple[list[float], list[float]]] = {}  # by MOC material
-    pieces: dict[str, dict[str, np.ndarray]] = {}  # for SPH, by material
+    # for SPH, one entry per self-shielding model: (pointwise energy grid,
+    # psi_M, label -> (pointwise flux, collision source))
+    sph_inputs: list[tuple[np.ndarray, np.ndarray, dict]] = []
     if shielding not in ("none", "equivalence", "cp", "sd"):
         raise ValueError(f"unknown shielding {shielding!r}")
     split = ring_shielding and shielding in ("cp", "sd")
@@ -163,26 +184,44 @@ def run(
         raise ValueError("ring shielding needs shielding cp or sd")
     if sph and shielding not in ("cp", "sd"):
         raise ValueError("SPH needs shielding cp or sd")
+    if coupled_clad and not (split and shielding == "sd"):
+        raise ValueError("coupled_clad needs shielding sd with ring_shielding")
+    if moving_targets and shielding != "sd":
+        raise ValueError("moving targets need shielding sd")
+    moving = MOVING if moving_targets else ()
     if shielding != "none":
         sigma_p = {
             name: sum(d * potential_scattering(n) for n, d in dens.items())
             for name, dens in densities.items()
         }
+        areas = dict.fromkeys(m.materials, 0.0)
+        for region_material, area in zip(geometry.materials(), base.areas, strict=True):
+            areas[region_material] += area
+        cell = [
+            (areas[k], densities[k], st.temperature(m.materials[k].temperature))
+            for k in m.materials
+        ]
+        if coupled_clad:
+            coupled = coupled_flux(
+                (densities["fuel"], st.temperature(m.materials["fuel"].temperature)),
+                (densities["clad"], st.temperature(m.materials["clad"].temperature)),
+                coupled_collisions(base, sigma_p), cell,
+                (list(m.materials).index("fuel"), list(m.materials).index("clad")),
+                moving=moving,
+            )  # fmt: skip
+            for label, phi in coupled.flux.items():
+                shapes[label] = (coupled.energy.tolist(), phi.tolist())
+            sph_inputs.append((coupled.energy, coupled.level, {
+                x: (coupled.flux[x], coupled.source[x]) for x in coupled.flux
+            }))  # fmt: skip
         for name in resonant:
             escapes[name] = dancoff(base, sigma_p, name)
             backgrounds[name] = sigma0(densities[name], escapes[name].sigma_e)
-            if shielding in ("cp", "sd"):
+            if shielding in ("cp", "sd") and not (
+                coupled_clad and name in ("fuel", "clad")
+            ):
                 table = escape_probability(base, sigma_p, name)
                 temperature = st.temperature(m.materials[name].temperature)
-                areas = dict.fromkeys(m.materials, 0.0)
-                for region_material, area in zip(
-                    geometry.materials(), base.areas, strict=True
-                ):
-                    areas[region_material] += area
-                cell = [
-                    (areas[k], densities[k], st.temperature(m.materials[k].temperature))
-                    for k in m.materials
-                ]
                 marched = shielding == "sd" and name == "fuel"
                 ring_table, collisions = None, None
                 if split and name == "fuel" and marched:
@@ -196,13 +235,22 @@ def run(
                     densities[name], temperature, table, slowing_down=marched,
                     cell=cell, region=list(m.materials).index(name),
                     rings=ring_table, details=details, collisions=collisions,
+                    moving=moving if name == "fuel" else (),
                 )  # fmt: skip
-                pieces[name] = details
+                references = {}
                 if ring_table is None:
                     shapes[name] = shape  # type: ignore[assignment]
+                    references[name] = (
+                        details["flux"],
+                        details["source"] * details["total"],
+                    )
                 else:
                     for k, ring_shape in enumerate(shape):
                         shapes[f"{name}/{k}"] = ring_shape  # type: ignore[assignment]
+                        own = details.get(f"source/{k}", details["source"])
+                        references[f"{name}/{k}"] = (details[f"flux/{k}"],
+                                                     own * details["total"])  # fmt: skip
+                sph_inputs.append((details["energy"], details["level"], references))
     full = base  # the tracking with model materials (SPH works on it)
     if split:
         base = replace(base, geometry=geometry.split_rings("fuel"))
@@ -215,26 +263,31 @@ def run(
         for n in densities[name]:
             law = mat.thermal_law(n)
             if label in shapes:
+                tag = (
+                    f"{shielding}{'c' if coupled_clad else ''}{'m' if moving else ''}"
+                    f"-{label.replace('/', '-')}"
+                )
                 lib = cached_groups(n, temperature, thermal=law, flux_shape=shapes[label],
-                                    shape_name=f"{shielding}-{label.replace('/', '-')}-{st.name}")  # fmt: skip
+                                    shape_name=f"{tag}-{st.name}")  # fmt: skip
             elif name in backgrounds:
                 lib = shielded(n, temperature, backgrounds[name][n], law)
             else:
                 lib = cached_groups(n, temperature, thermal=law)
             libraries[label][n] = lib
     factors: dict[str, np.ndarray] = {}
-    for name, details in pieces.items() if sph else ():
-        labels = [x for x in libraries if x.split("/")[0] == name]
-        sigma_t = {
-            x: sum(
-                (densities[name][n] * lib.sigma[1] for n, lib in libraries[x].items()),
-                np.zeros(XMAS_172.size),
-            )
-            for x in labels
-        }
-        mu = sph_factors(full, sigma_p, name, details, sigma_t, XMAS_172)
+    names = np.array(base.geometry.materials())
+    for energy, level, references in sph_inputs if sph else ():
+        sigma_t = {}
+        for x in references:
+            dens = densities[x.split("/")[0]]
+            sigma_t[x] = np.zeros(XMAS_172.size)
+            for n, lib in libraries[x].items():
+                sigma_t[x] += dens[n] * lib.sigma[1]
+        mu = sph_factors(
+            full, sigma_p, names, energy, level, references, sigma_t, XMAS_172
+        )
         factors.update(mu)
-        for x in labels:
+        for x in references:
             libraries[x] = {n: with_sph(lib, mu[x]) for n, lib in libraries[x].items()}
     region_densities = {label: densities[label.split("/")[0]] for label in libraries}
     xs = {
@@ -289,19 +342,35 @@ def main(argv: list[str] | None = None) -> None:
         "--shielding", choices=["none", "equivalence", "cp", "sd"], default="sd"
     )
     ap.add_argument("--model", default="vera-p1")
-    ap.add_argument("--azim", type=int, default=64)
-    ap.add_argument("--spacing", type=float, default=0.02)
+    ap.add_argument("--azim", type=int, default=AZIM)
+    ap.add_argument("--spacing", type=float, default=SPACING)
+    ap.add_argument("--fuel-rings", type=int, default=FUEL_RINGS,
+                    help="equal-area pellet rings")  # fmt: skip
     ap.add_argument(
         "--rings", action="store_true", help="shield each fuel ring separately"
     )
     ap.add_argument("--sph", action="store_true", help="SPH factors (cp, sd)")
+    ap.add_argument("--cp", action="store_true",
+                    help="also solve the cell by collision probabilities (cross-check)")  # fmt: skip
+    ap.add_argument("--clad", action="store_true",
+                    help="slow down the clad with the pellet rings (sd --rings)")  # fmt: skip
+    ap.add_argument("--moving", action="store_true",
+                   help="U-238 scatters on moving targets (sd)")  # fmt: skip
     args = ap.parse_args(argv)
     model = load_model(args.model)
     for name in args.states:
         t0 = time.perf_counter()
         r = run(name, args.shielding, model, azim=args.azim, spacing=args.spacing,
-                ring_shielding=args.rings, sph=args.sph)  # fmt: skip
+                fuel_rings=args.fuel_rings,
+                ring_shielding=args.rings, sph=args.sph,
+                coupled_clad=args.clad, moving_targets=args.moving)  # fmt: skip
         print(report(r))
+        if args.cp:
+            from fission.transport.cp import pin_cell
+
+            k_cp, _, _ = pin_cell(r.solution.problem)
+            print(f"  CP (Wigner-Seitz cell, white boundary), same cross sections: "
+                  f"k = {k_cp:.5f} ({1e5 * (k_cp - r.solution.k):+.0f} pcm vs MOC)")  # fmt: skip
         print(f"  ({time.perf_counter() - t0:.0f} s)\n", flush=True)
 
 

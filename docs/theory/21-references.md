@@ -36,6 +36,25 @@ source or a standard text.
 - []{#ref-openmc}**[OpenMC]** OpenMC documentation, Methods, ch. 3 "Cross
   Section Representations".
   <https://docs.openmc.org/en/stable/methods/cross_sections.html> **(free)**
+- []{#ref-openmc-physics}**[OpenMC physics]** OpenMC documentation,
+  Methods, ch. 5 "Neutron Physics": §5.3 (target at rest above 400 kT),
+  §5.10 "Effect of Thermal Motion on Cross Sections" (§5.10.1 constant
+  cross section, §5.10.2 energy-dependent cross section).
+  <https://docs.openmc.org/en/stable/methods/neutron_physics.html> **(free)**
+- []{#ref-becker}**[Becker]** B. Becker, R. Dagan, G. Lohnert, "Proof and
+  implementation of the stochastic formula for ideal gas, energy dependent
+  scattering kernel", *Annals of Nuclear Energy* 36, 470–474 (2009).
+  DBRC. <https://doi.org/10.1016/j.anucene.2008.12.001> **(not free)**
+- []{#ref-rvs}**[Romano & Walsh]** P. K. Romano, J. A. Walsh, "An improved
+  target velocity sampling algorithm for free gas elastic scattering",
+  *Annals of Nuclear Energy* 114, 318–324 (2018). RVS.
+  <https://doi.org/10.1016/j.anucene.2017.12.044> **(not free)**
+- []{#ref-ouisloumen}**[Ouisloumen & Sanchez]** M. Ouisloumen, R. Sanchez,
+  "A model for neutron scattering off heavy isotopes that accounts for
+  thermal agitation effects", *Nuclear Science and Engineering* 107,
+  189–200 (1991): the free-gas transfer kernel with an energy-dependent
+  cross section for deterministic codes.
+  <https://doi.org/10.13182/NSE89-186> **(not free)**
 
 ## Resonance theory {.unnumbered}
 

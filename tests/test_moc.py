@@ -48,6 +48,25 @@ def test_polar_quadrature():
     assert q.weight @ mu**4 == pytest.approx(0.2, rel=1e-14)  # degree 4 < 2n
 
 
+def test_tabuchi_yamamoto_reproduces_the_bickley_function():
+    """The polar integral of a segment is Ki3(tau); TY is built for it, so 3
+    TY angles beat 12 Gauss-Legendre angles at any optical thickness."""
+    from fission.transport.cp import bickley
+
+    tau = np.concatenate([[0.0], np.logspace(-3, 1.5, 300)])
+
+    def error(q):
+        terms = q.weight * q.sin * np.exp(-tau[:, None] / q.sin)
+        return np.max(np.abs(terms.sum(axis=1) - bickley(3, tau)))
+
+    for n in (1, 2, 3):
+        assert Polar.tabuchi_yamamoto(n).weight.sum() == pytest.approx(1.0, abs=1e-6)
+        assert error(Polar.tabuchi_yamamoto(n)) < error(Polar.gauss(n)) / 6
+    assert error(Polar.tabuchi_yamamoto(3)) < 5e-5 < error(Polar.gauss(12))
+    with pytest.raises(ValueError):
+        Polar.make(4)
+
+
 def test_one_material_everywhere_gives_k_infinity():
     """With one material in every region the flat flux is exact, whatever the
     tracking: MOC must reproduce the infinite-medium eigenvalue."""
@@ -142,3 +161,18 @@ def test_model_options_for_macroscopic_data():
     bad = {**base, "materials": {"w": {"macroscopic": "moderator", "density": 1.0}}}
     with pytest.raises(ModelError, match="unknown key"):
         parse(bad, MODELS_DIR)
+
+
+def test_fixed_source_can_start_from_given_boundary_fluxes():
+    from fission.transport.moc import fixed_source
+
+    p = _problem(_pin_model(), azim=16, spacing=0.05)
+    rng = np.random.default_rng(3)
+    sigma = rng.uniform(0.2, 3.0, (p.geometry.regions, 4))
+    source = rng.uniform(0.0, 1.0, (p.geometry.regions, 4))
+    cold, _ = fixed_source(p, sigma, source, use_rust=False)
+    psi = np.zeros((len(p.tracks), 2, len(p.polar.sin), 4))
+    fixed_source(p, sigma, source, use_rust=False, boundary=psi)
+    assert np.max(psi) > 0  # updated in place
+    warm, _ = fixed_source(p, sigma, source, use_rust=False, boundary=psi)
+    np.testing.assert_allclose(warm, cold, rtol=1e-9)

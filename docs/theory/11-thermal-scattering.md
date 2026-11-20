@@ -113,8 +113,7 @@ energies is close to isotropic.
 
 ## Group matrices with upscattering
 
-For each incident energy below the **thermal cutoff** of 4 eV (an XMAS-172
-boundary; the water data reach 10 eV) the kernel
+For each incident energy below the **thermal cutoff** the kernel
 $K_l(E \to g')$ is integrated over $E'$ and $\mu$:
 
 * in $E'$, by Gauss points on a grid that includes the group boundaries and
@@ -135,6 +134,20 @@ cross section and the total change with them. Group matrices obey detailed
 balance, $\phi_g\,\sigma_{g\to g'} = \phi_{g'}\,\sigma_{g'\to g}$, to 0.1%
 (the error falls quadratically with the kernel spacing: 9.6% at 0.2, 0.5% at
 0.05, 0.02% at 0.01).
+
+**Where the cutoffs are.** A free gas without a scattering law ends at 4 eV
+(an XMAS-172 boundary), and heavier targets are at rest above it. A
+scattering law is used up to the end of its data: 10 eV for water, so the
+XMAS rows up to 9.906 eV. Hydrogen is different again. It is as heavy as
+the neutron, so its thermal motion matters well above the thermal range. At
+5 eV a neutron scattered by hydrogen at 565 K keeps on average
+$E/2 + 0.75\,kT$ instead of $E/2$, which is half of the target's mean kinetic
+energy $\tfrac32 kT$. Over the many collisions of slowing down this raises the
+epithermal flux by a few $kT/E$. A nuclide lighter than a neutron (H-1)
+therefore stays a free gas above the scattering law, up to 1 keV. This is
+also OpenMC's rule (targets at rest only if heavier than a neutron).
+Chapter 19 found the error in a 2.6% deficit of U-238 capture at the
+6.67 eV resonance.
 
 ![The P0 transfer matrix of hydrogen in water below 1 eV. Entries left of the diagonal are upscattering: in the thermal group 18.4 b of the 50.1 b scattering cross section goes up in energy.](../figures/thermal_matrix.svg)
 

@@ -16,6 +16,14 @@ The totals are the plain ones, without the transport correction used by
 MOC: B1 (``b1.py``) treats the P1 scattering explicitly. The removal
 Sigma_t - sum_g' Sigma_s0,g->g' is the same with or without the correction,
 so the homogeneous infinite-medium eigenvalue equals the MOC k-infinity.
+
+**Discontinuity factors.** The homogeneous node has a flat flux; the real
+one dips in the fuel and peaks in the water. The ratio of the heterogeneous
+flux on the node surface to the homogeneous one (the average),
+f_g = phi_surface,g / phi_g, lets the nodal code reproduce the interface
+currents between different assemblies [Hebert]. The surface flux comes from
+the boundary angular fluxes of MOC (``moc.surface_flux``), averaged over
+the four reflective sides.
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from fission.processing.groups import GroupStructure
+from fission.transport.moc import surface_flux
 
 from .kappa import recoverable_energy
 
@@ -42,6 +51,7 @@ class FineConstants:
     fission: np.ndarray
     kappa_fission: np.ndarray  # eV / cm
     chi: np.ndarray
+    surface: np.ndarray | None = None  # side-averaged surface flux phi_s,g
 
     @property
     def absorption(self) -> np.ndarray:
@@ -96,7 +106,12 @@ def homogenize(result, name: str = "cell") -> FineConstants:
         }
         scatter = np.where(flux_total[None, :, None] > 0,
                            scatter / flux_total[None, :, None], 0.0)  # fmt: skip
+    surface = None
+    if sol.psi is not None:
+        sides = surface_flux(problem, sol.psi)
+        if sides:
+            surface = np.mean(list(sides.values()), axis=0)
     return FineConstants(
         name, groups, flux_total / volume, per["total"], scatter, per["nu"],
-        per["fission"], per["kappa"], chi / production,
+        per["fission"], per["kappa"], chi / production, surface,
     )  # fmt: skip

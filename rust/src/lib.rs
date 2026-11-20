@@ -12,6 +12,7 @@ pub mod gauss;
 pub mod groupr;
 pub mod infinite;
 pub mod mlbw;
+pub mod moving;
 pub mod moc;
 pub mod pointwise;
 pub mod raytrace;
@@ -484,6 +485,7 @@ fn infinite_medium<'py>(
 /// `transport.trace.trace_track`): (regions, lengths, start per track).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (pitch, nx, ny, radii, sectors, offsets, x0, y0, x1, y1, gap=0.0))]
 fn trace_tracks<'py>(
     py: Python<'py>,
     pitch: f64,
@@ -496,6 +498,7 @@ fn trace_tracks<'py>(
     y0: PyReadonlyArray1<'py, f64>,
     x1: PyReadonlyArray1<'py, f64>,
     y1: PyReadonlyArray1<'py, f64>,
+    gap: f64,
 ) -> PyResult<(IntArray<'py>, Array<'py>, IntArray<'py>)> {
     let cells = nx * ny;
     if radii.len() != cells || sectors.len() != cells || offsets.len() != cells {
@@ -521,6 +524,7 @@ fn trace_tracks<'py>(
     }
     let lattice = raytrace::Lattice {
         pitch,
+        gap,
         nx,
         ny,
         radii,
@@ -688,8 +692,51 @@ fn cmfd_solve<'py>(
 
 /// Ultra-fine slowing-down march of R regions (`shielding.march`).
 /// Returns (psi flattened (n, R), psi_M (n)).
+
+type KernelOut<'py> = (f64, f64, f64, usize, usize, Bound<'py, PyArray1<i64>>,
+                       Bound<'py, PyArray1<i64>>, Array<'py>, Array<'py>);
+
+/// Free-gas elastic kernel with the 0 K cross section (port of
+/// `fission.pincell.moving.free_gas_kernel`): returns the MovingKernel fields
+/// after (nuclide, awr, temperature).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
+fn free_gas_kernel<'py>(
+    py: Python<'py>,
+    energies: PyReadonlyArray1<'py, f64>,
+    sigma0: PyReadonlyArray1<'py, f64>,
+    awr: f64,
+    temperature: f64,
+    e_low: f64,
+    e_top: f64,
+    dx: f64,
+    dz: f64,
+) -> PyResult<KernelOut<'py>> {
+    let (e, s) = (energies.as_slice()?, sigma0.as_slice()?);
+    let k = py
+        .detach(|| moving::free_gas_kernel(e, s, awr, temperature, e_low, e_top, dx, dz))
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    Ok((k.scale, k.base, k.dx, k.top, k.nodes, k.starts.into_pyarray(py),
+        k.rows.into_pyarray(py), k.values.into_pyarray(py), k.norm.into_pyarray(py)))
+}
+
+/// A `MovingKernel` read by attribute.
+#[derive(FromPyObject)]
+struct PyKernel<'py> {
+    scale: f64,
+    base: f64,
+    dx: f64,
+    top: usize,
+    nodes: usize,
+    starts: PyReadonlyArray1<'py, i64>,
+    rows: PyReadonlyArray1<'py, i64>,
+    values: PyReadonlyArray1<'py, f64>,
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (energies, total, scatter, alphas, escape, collide, volumes, history,
+                    start, share, outside, kernels=Vec::new(), tol=1e-10, max_passes=200))]
 fn slowing_down_march<'py>(
     py: Python<'py>,
     energies: PyReadonlyArray1<'py, f64>,
@@ -703,7 +750,26 @@ fn slowing_down_march<'py>(
     start: usize,
     share: f64,
     outside: PyReadonlyArray1<'py, f64>,
+    kernels: Vec<Option<PyKernel<'py>>>,
+    tol: f64,
+    max_passes: usize,
 ) -> PyResult<(Array<'py>, Array<'py>)> {
+    let mut refs = Vec::with_capacity(kernels.len());
+    for k in &kernels {
+        refs.push(match k {
+            None => None,
+            Some(k) => Some(slowing::Kernel {
+                scale: k.scale,
+                base: k.base,
+                dx: k.dx,
+                top: k.top,
+                nodes: k.nodes,
+                starts: k.starts.as_slice()?,
+                rows: k.rows.as_slice()?,
+                values: k.values.as_slice()?,
+            }),
+        });
+    }
     let inp = slowing::Input {
         energies: energies.as_slice()?,
         total: total.as_slice()?,
@@ -716,6 +782,9 @@ fn slowing_down_march<'py>(
         start,
         share,
         outside: outside.as_slice()?,
+        kernels: refs,
+        tol,
+        max_passes,
     };
     let (psi, levels) = py
         .detach(|| slowing::march(&inp))
@@ -864,6 +933,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(moc_sweep, m)?)?;
     m.add_function(wrap_pyfunction!(cmfd_solve, m)?)?;
     m.add_function(wrap_pyfunction!(slowing_down_march, m)?)?;
+    m.add_function(wrap_pyfunction!(free_gas_kernel, m)?)?;
     m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_weights, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;

@@ -8,10 +8,12 @@ const TWO_PI: f64 = 2.0 * PI;
 const MIN_LENGTH: f64 = 1e-10;
 
 /// A lattice of square cells, bottom-left at the origin, cells numbered
-/// iy * nx + ix. Each cell has ring radii, a sector count and the index of
+/// iy * nx + ix, surrounded by a gap (points in it belong to the nearest
+/// edge cell). Each cell has ring radii, a sector count and the index of
 /// its first flat-source region.
 pub struct Lattice {
     pub pitch: f64,
+    pub gap: f64,
     pub nx: usize,
     pub ny: usize,
     pub radii: Vec<Vec<f64>>,
@@ -22,7 +24,7 @@ pub struct Lattice {
 impl Lattice {
     fn cell_at(&self, x: f64, y: f64) -> (usize, usize) {
         let clamp = |v: f64, n: usize| -> usize {
-            let i = (v / self.pitch) as i64; // truncation, as int() in Python
+            let i = ((v - self.gap) / self.pitch) as i64; // truncation, as int() in Python
             i.clamp(0, n as i64 - 1) as usize
         };
         (clamp(x, self.nx), clamp(y, self.ny))
@@ -46,13 +48,13 @@ impl Lattice {
 
     /// (region, length) of every segment from (x0, y0) to (x1, y1).
     pub fn trace(&self, x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<(usize, f64)> {
-        let p = self.pitch;
+        let (p, g) = (self.pitch, self.gap);
         let length = ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)).sqrt();
         let (dx, dy) = ((x1 - x0) / length, (y1 - y0) / length);
         let mut cuts = vec![0.0, length];
         if dx != 0.0 {
             for i in 1..self.nx {
-                let t = (i as f64 * p - x0) / dx;
+                let t = (g + i as f64 * p - x0) / dx;
                 if 0.0 < t && t < length {
                     cuts.push(t);
                 }
@@ -60,7 +62,7 @@ impl Lattice {
         }
         if dy != 0.0 {
             for j in 1..self.ny {
-                let t = (j as f64 * p - y0) / dy;
+                let t = (g + j as f64 * p - y0) / dy;
                 if 0.0 < t && t < length {
                     cuts.push(t);
                 }
@@ -76,7 +78,7 @@ impl Lattice {
             let tm = 0.5 * (a + b);
             let (ix, iy) = self.cell_at(x0 + tm * dx, y0 + tm * dy);
             let cell = iy * self.nx + ix;
-            let (cx, cy) = ((ix as f64 + 0.5) * p, (iy as f64 + 0.5) * p);
+            let (cx, cy) = (g + (ix as f64 + 0.5) * p, g + (iy as f64 + 0.5) * p);
             let mut local = vec![a, b];
             let (ox, oy) = (x0 - cx, y0 - cy);
             let bb = dx * ox + dy * oy;
@@ -175,6 +177,7 @@ mod tests {
     fn pin() -> Lattice {
         Lattice {
             pitch: 1.26,
+            gap: 0.0,
             nx: 1,
             ny: 1,
             radii: vec![vec![0.4096, 0.418, 0.475]],

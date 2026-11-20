@@ -1,6 +1,7 @@
 """Type stubs for the Rust extension module (rust/src/lib.rs)."""
 
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -134,7 +135,20 @@ def slowing_down_march(
     start: int,
     share: float,
     outside: Array,
+    kernels: list[Any] = ...,  # MovingKernel | None per nuclide
+    tol: float = ...,
+    max_passes: int = ...,
 ) -> tuple[Array, Array]: ...
+def free_gas_kernel(
+    energies: Array,
+    sigma0: Array,
+    awr: float,
+    temperature: float,
+    e_low: float,
+    e_top: float,
+    dx: float,
+    dz: float,
+) -> tuple[float, float, float, int, int, Any, Any, Array, Array]: ...
 def gauss_legendre(n: int) -> tuple[Array, Array]: ...
 def trace_tracks(
     pitch: float,
@@ -147,6 +161,7 @@ def trace_tracks(
     y0: Array,
     x1: Array,
     y1: Array,
+    gap: float = 0.0,
 ) -> tuple[npt.NDArray[np.int64], Array, npt.NDArray[np.int64]]: ...
 def moc_sweep(
     region: npt.NDArray[np.int64],

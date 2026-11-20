@@ -32,7 +32,8 @@ make data         # download pin-cell evaluations into endf-data/
 make tables       # build/load cached pointwise tables for pin-cell nuclides
 make doppler-tables TEMPS="293.6 900"  # broadened tables (endf-data/doppler/)
 make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|nr; MODEL=vera-p1)
-make pin STATES="1A 1B" PIN_SHIELD=sd PIN_ARGS="--rings --sph"  # heterogeneous VERA pin, MOC + shielded ENDF libraries
+make pin STATES="1A 1B" PIN_SHIELD=sd PIN_ARGS="--rings --sph --clad --cp"  # heterogeneous VERA pin, MOC (+ CP cross-check; ~3.5 min/state at the converged defaults, PIN_ARGS+="--azim 64 --fuel-rings 3" for a quick look)
+make assembly STATES=2A PIN_ARGS="--rings --sph --clad"  # VERA 17x17 lattice: k + pin powers vs KENO (~11 min/state)
 make fewgroup STATES=1A PIN_ARGS="--rings --sph"  # 2-group constants (homogenize, B1, condense) -> endf-data/fewgroup/
 make nodal-check STATE=1A  # run branch claude-nodal (git archive, tools env) on those constants
 make openmc-library  # NJOY -> OpenMC HDF5 of our ENDF files (endf-data/openmc/, ~10 min; check only)
@@ -109,6 +110,20 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   `reference.py`: JSON spec for OpenMC + comparison by nuclide/ring/band;
   tools side `checks/openmc_library.py`, `checks/openmc_pin.py` (outside
   lint scope, run in tools env; results in endf-data/openmc/runs/).
+- C4: `models/vera-p2.toml` (17x17, guide/instrument tubes, lattice key
+  `gap` = inter-assembly half gap; gap points belong to the edge cells'
+  outer regions, exact off-centre wedge areas; tracer Python+Rust and CMFD
+  widths handle it; `from_core` rejects gaps) + `vera-p2-pin-powers.toml`
+  (KENO octants). `pincell/assembly.py` (pin powers vs KENO). `transport/cp.py`:
+  1D cylindrical CP (Bickley Ki3, Carlvik chords, white boundary), `pin_cell`
+  cross-check (+71 pcm vs MOC on 1A). `shielding.coupled_collisions`
+  (P_j->i on a Sigma_fuel x Sigma_clad grid) + `coupled_flux` (rings + clad
+  marched together; march takes per-region totals/scatter, Rust too);
+  `run(coupled_clad=)` / `--clad`. `moc.surface_flux` (boundary psi ->
+  surface scalar flux) -> ADFs in `fewgroup` (`Solution.psi`). CMFD waits
+  for positive coarse fluxes (negative transport-corrected H self-scatter
+  makes early guide-tube fluxes negative). Assembly needs 64 azim / 0.03 cm
+  (0.05 cm tracks: -127 pcm, thinner than the gap).
 - `src/fission/fewgroup/` (C3): `homogenize.py` (flux-volume weighting of a
   heterogeneous Result, plain totals + P0/P1, chi by region production),
   `b1.py` (B1 equations, alpha(B/Sigma_t), secant search for k=1, D = J/(B phi)),
@@ -143,7 +158,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `20-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `21-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -173,7 +188,8 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   flux_shape, shape_name)` caches them. Used for homogeneous NR shielding.
 - Unsupported formats so far: LRF=7 (Fe-54, Fe-57), URR LRU=2 LRF=1 (Fe-58),
   Reich-Moore negative-J channel spins (Cr-53); left out of VERA clad.
-- Thermal (A4): below 4 eV the elastic rows are replaced by a free-gas kernel
+- Thermal (A4): H-1 (awr < 1) is a free gas from the end of its law up to
+  1 keV (OpenMC's rule). Otherwise below 4 eV the elastic rows are replaced by a free-gas kernel
   (default, normalized to the broadened elastic table, as NJOY) or by MF7
   S(alpha,beta) (`thermal="HinH2O"`, absolute). Kernel tabulated every 0.02
   in lethargy (detailed balance ~0.1%); cosine integral in s = sqrt(alpha).
@@ -198,7 +214,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1); theory docs ch. 0–20. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1), C4 CP + clad + 17x17 assembly; theory docs ch. 0–21. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -223,8 +239,57 @@ self-shielding (C1).
     for 1A, M^2 57 cm^2; two-group constants run unchanged in branch
     `claude-nodal` via `make nodal-check`; vs OpenMC 2-group XS within 0.5%,
     thermal fuel/water flux ratio +0.4%)
-  - **C4 (next): CP cross-check (also pointwise fuel+gap+clad slowing
-    down), 17×17 assembly, discontinuity factors**
+  - C4 CP cross-check, clad in the slowing down, 17×17 assembly, ADFs
+    (done: CP +71 pcm vs MOC; coupled clad +85..115 pcm, pin 1A-1D vs
+    OpenMC -77/-62/-139/-234; VERA 2A-2D vs OpenMC -11/-46/-80/-117, pin
+    powers vs KENO 0.05-0.07% RMS; ADF 2A 0.996/0.9995)
+  - Doppler trend (done, ch. 19 "Moving targets"): data = NJOY to 0.01%;
+    the march is target-at-rest. OpenMC 1B->1D: default (constant-sigma
+    free gas < 400 kT) -1833, at rest > 4 eV -1970, exact RVS -2101; ours
+    -2005. Vs RVS: 1B +17, 1D +113 pcm (step 4.6% too weak). Reference
+    `spec --free-gas-cutoff 4 | --resonance-scattering --tag=-rvs`;
+    `compare --result <file>`.
+  - Moving targets (done, ch. 19): `pincell/moving.py` free-gas kernel with
+    0 K sigma (Ouisloumen-Sanchez; split at z* into prefix/suffix log-sums,
+    hat weights W_j of z sigma_0; mesh uniform in x = sqrt(AE/kT), dx 1/8),
+    Rust `moving.rs` (3 s, parity 2e-15); `march(moving=[kernel|None])`
+    Gauss-Seidel passes (first at rest), flux continued flat below the
+    range; `run(moving_targets=)` / `--moving` (U-238, 1 eV-1 keV). Vs OpenMC
+    RVS-U238 + others at rest (tag -rvsrest): step 1B->1D -2208 vs -2172+-28;
+    level 1B -124, 1D -160 at default settings.
+    Kinematics seam at the kernel top is physical (OpenMC has it too).
+  - The 66 pcm (done, ch. 19 "Chasing the level"): OpenMC keff noise (use
+    tally k = nuSigf/abs for differences) + discretization. Default MOC
+    tracking 64/0.02/3 GL polar is ~190 pcm low on the 172-group pin (GL
+    overestimates the thick-region inflow integral, int sin dmu, 0.46% at 3
+    points; unshielded +560 pcm); 3 pellet rings over-capture in the
+    large-Gamma_n resonances (20.9, 36.7 eV), which moving targets amplify.
+    At 10 rings + final MOC 256/0.005/12: moving effect 1B -86 / 1D -277 vs
+    OpenMC tally -70 / -267; capture added +63/+209 vs +50+-8/+201+-8.
+    Converged level at rest is +170 pcm vs OpenMC, all from U-238 capture at
+    4-10 eV (6.67 eV) being 2.6% low (hidden before by the polar error).
+    Defaults unchanged so far.
+  - The 6.67 eV deficit (done, ch. 19 "hydrogen moves too", ch. 11): the
+    flux was low by ~2.7 kT/E in every region from H-1 at rest above 4 eV.
+    OpenMC: targets at rest only if awr > 1, so H is S(a,b) to 10 eV and
+    free gas above. Library rule now: law up to `law.emax` (water 10 eV ->
+    XMAS rows to 9.906 eV), free gas for awr < 1 up to `LIGHT_FREE_GAS_TOP`
+    = 1 keV, at rest above. Converged (10 rings, final MOC 256/0.005/12):
+    1B -44, 1D -42 pcm vs OpenMC rest; every U-238 capture band within 1%.
+    Default settings (3 rings, 64/0.02/3) vs OpenMC default runs now
+    1A-1D -271/-274/-351/-447 (were -77/-62/-139/-234 by cancellation).
+    Numbers in ch. 12-19 and the assembly predate the fix (not rerun).
+  - Converged defaults (done, ch. 15 + 19): Tabuchi-Yamamoto polar set
+    (`Polar.tabuchi_yamamoto`, 1-3 angles, OpenMOC values; default of
+    `tracking(quadrature=)`; Ki3 error 3.4e-5 at 3 angles < GL 12). Pin
+    defaults `heterogeneous.AZIM/SPACING/POLAR/FUEL_RINGS` = 256 / 0.02 / 3
+    / 10 (~3.5 min warm, ~20 pcm from converged); CLIs take --fuel-rings.
+    Assembly keeps 64 / 0.03 / 3 rings. `fixed_source` stops on the region
+    tallies, drops face currents, takes `boundary=` (SPH warm start).
+    1A-1D vs OpenMC default -62/-92/-85/-164; 1B/1D vs at-rest -89/-23, all
+    rates within 1e-4 per fission neutron. C5G7 +12 pcm.
+  - Next: the march with moving H, the assembly at converged tracking, or
+    the M track (M2 state-matrix driver)
 - **M: model building** (describe the reactor once, as data; generate every calculation from it)
   - M1 declarative model file: TOML layers + states, number densities, homogenization (done)
   - M2 state-matrix driver: lattice calculation at every branch point

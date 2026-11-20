@@ -127,7 +127,8 @@ def couplings(
     previous, relax: D^ <- relax D^ + (1 - relax) D^(previous) (see RELAX).
     """
     g = problem.geometry
-    ny, nx, h = g.ny, g.nx, g.pitch
+    ny, nx = g.ny, g.nx
+    wx, wy = g.cell_widths()  # edge cells include a gap around the lattice
     groups = problem.groups
     n_xf, _ = face_counts(g)
     jx = currents[:n_xf].T.reshape(groups, ny, nx + 1)
@@ -136,21 +137,31 @@ def couplings(
     d = 1.0 / (3.0 * coarse.total)
     phi = coarse.flux
 
-    def vacuum(dc: np.ndarray) -> np.ndarray:
-        return 2 * dc * h / (h + 4 * dc)
+    # Face currents are integrated over the face (length L). Between cells
+    # of widths h_L and h_R: J = -L 2 D_L D_R / (D_L h_R + D_R h_L) (phi_R -
+    # phi_L); at a vacuum side of a cell of width h: J = L 2 D / (h + 4 D) phi.
+    # For square cells of one pitch the lengths cancel.
+    def vacuum(dc: np.ndarray, h, length) -> np.ndarray:
+        return length * 2 * dc / (h + 4 * dc)
 
+    rows = wy[None, :, None]  # length of the x-faces
+    cols = wx[None, None, :]  # length of the y-faces
     dtx = np.zeros((groups, ny, nx + 1))
-    dtx[:, :, 1:-1] = 2 * d[:, :, :-1] * d[:, :, 1:] / (d[:, :, :-1] + d[:, :, 1:])
+    hl, hr = wx[None, None, :-1], wx[None, None, 1:]
+    dl, dr = d[:, :, :-1], d[:, :, 1:]
+    dtx[:, :, 1:-1] = rows * 2 * dl * dr / (dl * hr + dr * hl)
     if bc["left"] == "vacuum":
-        dtx[:, :, 0] = vacuum(d[:, :, 0])
+        dtx[:, :, 0] = vacuum(d[:, :, 0], wx[0], wy[None, :])
     if bc["right"] == "vacuum":
-        dtx[:, :, -1] = vacuum(d[:, :, -1])
+        dtx[:, :, -1] = vacuum(d[:, :, -1], wx[-1], wy[None, :])
     dty = np.zeros((groups, ny + 1, nx))
-    dty[:, 1:-1, :] = 2 * d[:, :-1, :] * d[:, 1:, :] / (d[:, :-1, :] + d[:, 1:, :])
+    hb, ht = wy[None, :-1, None], wy[None, 1:, None]
+    db, dt = d[:, :-1, :], d[:, 1:, :]
+    dty[:, 1:-1, :] = cols * 2 * db * dt / (db * ht + dt * hb)
     if bc["bottom"] == "vacuum":
-        dty[:, 0, :] = vacuum(d[:, 0, :])
+        dty[:, 0, :] = vacuum(d[:, 0, :], wy[0], wx[None, :])
     if bc["top"] == "vacuum":
-        dty[:, -1, :] = vacuum(d[:, -1, :])
+        dty[:, -1, :] = vacuum(d[:, -1, :], wy[-1], wx[None, :])
 
     zero_x = np.zeros((groups, ny, 1))
     left = np.concatenate([zero_x, phi], axis=2)  # phi_L of every x-face

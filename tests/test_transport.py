@@ -32,6 +32,12 @@ def _mixed():
     return Geometry(1.26, 3, 2, cells)
 
 
+def _gapped():
+    """The same lattice inside a 0.04 cm water gap (an assembly edge)."""
+    g = _mixed()
+    return Geometry(g.pitch, g.nx, g.ny, g.cells, gap=0.04)
+
+
 # ---------------------------------------------------------------- regions
 def test_equal_area_rings():
     radii = split_ring(0.1, 0.4096, 3)
@@ -56,6 +62,23 @@ def test_cell_areas_are_exact(sectors):
     sampled = counts / counts.sum() * 1.26**2
     big = areas > 0.02  # the thin gap needs a finer grid
     assert sampled[big] == pytest.approx(areas[big], rel=0.01)
+
+
+def test_gap_belongs_to_the_edge_cells():
+    g = _gapped()
+    assert g.width == pytest.approx(3 * 1.26 + 0.08)
+    assert g.areas().sum() == pytest.approx(g.width * g.height, rel=1e-14)
+    # interior regions are unchanged; edge cells' outer regions grow
+    plain = _mixed().areas()
+    grown = g.areas() - plain
+    assert np.all(grown >= -1e-15)
+    assert grown.sum() == pytest.approx(g.width * g.height - 3 * 2 * 1.26**2)
+    # a point in the gap left of cell (0, 0), at its centre height, is in
+    # that cell's outermost ring, sector 4 (angle pi, 8 sectors)
+    x, y = 0.01, 0.04 + 0.63
+    region = g.region(x, y)
+    assert region == g.offsets[0] + 3 * 8 + 4
+    assert g.cell_widths()[0].tolist() == pytest.approx([1.30, 1.26, 1.30])
 
 
 def test_lattice_from_model_keeps_map_orientation():
@@ -189,7 +212,7 @@ def test_segments_cover_every_track():
         assert np.all(regions[1:] != regions[:-1])
 
 
-@pytest.mark.parametrize("make", [_pin, _mixed])
+@pytest.mark.parametrize("make", [_pin, _mixed, _gapped])
 def test_track_areas_converge_to_the_exact_areas(make):
     g = make()
     exact = g.areas()
@@ -203,7 +226,7 @@ def test_track_areas_converge_to_the_exact_areas(make):
     assert errors[2] < 2e-5  # cm^2; the cells are 1.59 cm^2
 
 
-@pytest.mark.parametrize("make", [_pin, _mixed])
+@pytest.mark.parametrize("make", [_pin, _mixed, _gapped])
 def test_rust_trace_matches_python(make):
     g = make()
     tracks = cyclic_tracks(g.width, g.height, 32, 0.02)

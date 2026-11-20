@@ -138,3 +138,44 @@ def test_library_with_free_gas_conserves_the_elastic_cross_section():
     assert (
         np.tril(gl.scatter_elastic[0], -1).sum() < 1e-12
     )  # target at rest: rounding only
+
+
+def test_moving_hydrogen_takes_less_energy_than_hydrogen_at_rest():
+    """On a target at rest (A ~ 1) the mean outgoing energy is E/2. Thermal
+    motion gives some energy back, a fraction of order kT/E: the reason H-1 is
+    a free gas above the thermal range too (chapter 19)."""
+    groups = equal_lethargy(400, 1e-3, 6.0)
+    edges = np.asarray(groups.boundaries)
+    mid = np.sqrt(edges[:-1] * edges[1:])
+    model = FreeGas(0.99917, 565.0)
+    energy = 5.0
+    k, total = thermal_kernel(model, groups, 0, energy)
+    mean = float(np.sum(k[0] * mid) / np.sum(k[0]))
+    gain = (mean - energy / 2) / (energy / 2)
+    assert np.sum(k[0]) == pytest.approx(total, rel=1e-3)
+    assert 0.5 * model.kt / energy < gain < 10 * model.kt / energy
+
+
+@pytest.mark.slow
+def test_hydrogen_library_is_bound_then_free_gas_then_at_rest():
+    lib = EndfLibrary()
+    if not (lib.root / "archives" / "thermal_scatt-version.VIII.1.tar.gz").exists():
+        pytest.skip("ENDF/B-VIII.1 thermal scattering data not downloaded")
+    from fission.processing.library import cached_groups
+    from fission.processing.thermal import LIGHT_FREE_GAS_TOP
+
+    water = cached_groups("H1", 565.0, thermal="HinH2O")
+    rest = cached_groups("H1", 565.0, thermal=None)
+    law = scattering_law(Evaluation.from_file(lib.thermal("HinH2O")), 565.0)
+    assert water.thermal_cutoff == law.emax
+    groups = water.groups
+    for g in range(groups.size):
+        lo, hi = groups.bounds(g)
+        row, row0 = water.scatter_elastic[0, g], rest.scatter_elastic[0, g]
+        if hi <= law.emax:
+            continue  # S(alpha, beta): bound cross section, upscattering
+        if hi <= LIGHT_FREE_GAS_TOP:
+            assert row.sum() == pytest.approx(water.sigma[2][g], rel=1e-4)
+            assert row[g] > row0[g]  # moving targets keep neutrons in the group
+        elif lo >= LIGHT_FREE_GAS_TOP * (1 + 1e-12):
+            assert np.array_equal(row, row0)

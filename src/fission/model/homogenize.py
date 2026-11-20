@@ -32,10 +32,20 @@ def material_areas(model: Model, lattice: Lattice) -> dict[str, float]:
         return {lattice.material: 1.0}
     assert lattice.pins is not None and lattice.pitch is not None
     areas: dict[str, float] = {}
-    for row in lattice.pins:
-        for name in row:
-            for material, area in model.pins[name].areas(lattice.pitch):
+    n, p, g = len(lattice.pins), lattice.pitch, lattice.gap
+    for i, row in enumerate(lattice.pins):
+        for j, name in enumerate(row):
+            pin = model.pins[name]
+            for material, area in pin.areas(p):
                 areas[material] = areas.get(material, 0.0) + area
+            # the gap around the lattice belongs to the edge cells' fill
+            # material (as in the transport mesh)
+            width = p + g * ((j == 0) + (j == n - 1))
+            height = p + g * ((i == 0) + (i == n - 1))
+            extra = width * height - p * p
+            if extra:
+                fill = pin.materials[-1]
+                areas[fill] = areas.get(fill, 0.0) + extra
     return areas
 
 

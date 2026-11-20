@@ -50,6 +50,7 @@ from functools import cache
 
 import numpy as np
 
+from fission.pincell.moving import MovingKernel
 from fission.processing.cache import cached_doppler
 from fission.processing.groupr import GroupLibrary
 from fission.processing.groups import GroupStructure
@@ -63,6 +64,7 @@ SLOWING_DOWN_RANGE = (
     0.996,
     24787.5,
 )  # eV, XMAS-172 boundaries around U-238's resolved range
+MOVING_TOP = 1000.0  # eV: moving targets below (OpenMC's resonance-scattering default)
 
 
 @cache
@@ -278,6 +280,215 @@ def collision_matrix(
     return np.asarray(sigmas), out, volumes
 
 
+@dataclass
+class CoupledTable:
+    """First-collision probabilities between the pellet rings and the clad,
+    tabulated against both materials' total cross sections."""
+
+    labels: list[str]  # resonant regions: "fuel/0", ..., "clad"
+    volumes: np.ndarray  # (R,)
+    sigma_fuel: np.ndarray  # (nf,) 1/cm
+    sigma_clad: np.ndarray  # (nc,)
+    collide: np.ndarray  # (nf, nc, R, R): P_j->i at [., ., j, i]
+
+    def at(self, fuel: np.ndarray, clad: np.ndarray) -> np.ndarray:
+        """P_j->i at pointwise (Sigma_fuel, Sigma_clad), bilinear in the logs:
+        shape (n, R, R)."""
+        x, y = np.log(self.sigma_fuel), np.log(self.sigma_clad)
+        lx = np.clip(np.log(fuel), x[0], x[-1])
+        ly = np.clip(np.log(clad), y[0], y[-1])
+        i = np.clip(np.searchsorted(x, lx) - 1, 0, len(x) - 2)
+        j = np.clip(np.searchsorted(y, ly) - 1, 0, len(y) - 2)
+        tx = ((lx - x[i]) / (x[i + 1] - x[i]))[:, None, None]
+        ty = ((ly - y[j]) / (y[j + 1] - y[j]))[:, None, None]
+        c = self.collide
+        return ((1 - tx) * (1 - ty) * c[i, j] + tx * (1 - ty) * c[i + 1, j]
+                + (1 - tx) * ty * c[i, j + 1] + tx * ty * c[i + 1, j + 1])  # fmt: skip
+
+
+def coupled_collisions(
+    problem: Problem,
+    sigma_p: dict[str, float],
+    sigma_fuel: np.ndarray | None = None,
+    sigma_clad: np.ndarray | None = None,
+    use_rust: bool = True,
+) -> CoupledTable:
+    """P_j->i between the fuel rings and the clad, for every pair (Sigma_fuel,
+    Sigma_clad) of a grid: one fixed-source sweep per pair, with one source
+    "group" per resonant region (everything else: pure absorbers Sigma_p).
+
+    The clad is heavy (zirconium): a neutron scattered there stays close to
+    its energy, so in a fuel resonance the clad's flux dips too. Treating the
+    clad as a region of the slowing-down calculation, instead of as part of
+    the narrow-resonance outside, needs these probabilities at both cross
+    sections, since both vary with energy."""
+    if sigma_fuel is None:
+        sigma_fuel = np.logspace(-3, 4, 43)
+    if sigma_clad is None:
+        sigma_clad = np.logspace(-2, 3, 21)
+    g = problem.geometry
+    labels_fsr = np.array(g.split_rings("fuel").materials())
+    rings = sorted({str(x) for x in labels_fsr if str(x).startswith("fuel/")},
+                   key=lambda x: int(x.split("/")[1]))  # fmt: skip
+    labels = [*rings, "clad"]
+    masks = [labels_fsr == x for x in labels]
+    volumes = np.array([problem.areas[m].sum() for m in masks])
+    base = np.maximum(np.array([sigma_p[m] for m in g.materials()]), 1e-12)
+    source = np.array([np.where(m, 1.0 / FOUR_PI, 0.0) for m in masks]).T
+    fuel = np.any(np.array(masks[:-1]), axis=0)
+    clad = masks[-1]
+    out = np.zeros((len(sigma_fuel), len(sigma_clad), len(labels), len(labels)))
+    for a, sf in enumerate(sigma_fuel):
+        for b, sc in enumerate(sigma_clad):
+            sigma = np.where(fuel, sf, np.where(clad, sc, base))
+            flux, _ = fixed_source(
+                problem, np.repeat(sigma[:, None], len(labels), axis=1), source,
+                use_rust=use_rust,
+            )  # fmt: skip
+            collisions = problem.areas[:, None] * sigma[:, None] * flux  # (fsr, j)
+            for i, m in enumerate(masks):
+                out[a, b, :, i] = collisions[m].sum(axis=0) / volumes
+    return CoupledTable(
+        labels, volumes, np.asarray(sigma_fuel), np.asarray(sigma_clad), out
+    )
+
+
+@dataclass
+class CoupledFlux:
+    """The pointwise solution of the fuel-rings + clad slowing down."""
+
+    energy: np.ndarray  # ascending grid (eV)
+    level: np.ndarray  # psi_M
+    flux: dict[str, np.ndarray]  # label -> phi on the grid
+    source: dict[str, np.ndarray]  # label -> collision source S
+
+
+def coupled_flux(
+    fuel: tuple[dict[str, float], float],
+    clad: tuple[dict[str, float], float],
+    table: CoupledTable,
+    cell: list[tuple[float, dict[str, float], float]],
+    resonant: tuple[int, int],
+    energy_range: tuple[float, float] = SLOWING_DOWN_RANGE,
+    use_rust: bool = True,
+    moving: tuple[str, ...] = (),
+    moving_top: float = MOVING_TOP,
+) -> CoupledFlux:
+    """Flux of every pellet ring and of the clad, slowing down together.
+
+    fuel, clad: (number densities, temperature); cell: (volume, densities,
+    temperature) of every material of the cell, `resonant` the indices of the
+    fuel and the clad in it (the others deplete psi_M by their absorption).
+    Narrow resonances outside `energy_range`, as in ``region_flux``: there
+    every region has phi_r = E_r + (1 - E_r) Sigma_p,r / Sigma_t,r with its
+    own escape E_r = 1 - sum_i P_r->i.
+
+    moving: fuel nuclides that scatter on moving targets below `moving_top`
+    (``moving_kernels``; ``march``).
+    """
+    mats = {"fuel": fuel, "clad": clad}
+    tables = {
+        (m, n): cached_doppler(n, t) for m, (dens, t) in mats.items() for n in dens
+    }
+    grid = np.unique(np.concatenate([np.asarray(t.energies) for t in tables.values()]))
+    e_low, e_top = energy_range
+    alphas = {
+        key: ((mass_ratio(key[1]) - 1) / (mass_ratio(key[1]) + 1)) ** 2
+        for key in tables
+    }
+    reach = e_top * max(1 / a for a in alphas.values()) * 1.001
+    grid = np.union1d(grid, [e_low, e_top, reach])
+    kernels = moving_kernels(moving, fuel[1], e_low, moving_top, use_rust)
+    grid = _with_mesh(grid, kernels.values(), e_low, reach)
+
+    def column(key, mt):
+        t = tables[key]
+        return mats[key[0]][0][key[1]] * np.interp(grid, np.asarray(t.energies),
+                                                   np.asarray(t.xs[mt]))  # fmt: skip
+
+    total = {m: sum(column(k, 1) for k in tables if k[0] == m) for m in mats}
+    sigma_p = {
+        m: sum(d * potential_scattering(n) for n, d in mats[m][0].items()) for m in mats
+    }
+    is_clad = np.array([x == "clad" for x in table.labels])
+    collide = table.at(total["fuel"], total["clad"])  # (grid, R, R)
+    escape = 1.0 - collide.sum(axis=2)
+    totals = np.where(is_clad[None, :], total["clad"][:, None], total["fuel"][:, None])
+    potentials = np.where(is_clad, sigma_p["clad"], sigma_p["fuel"])
+    flux = escape + (1.0 - escape) * potentials[None, :] / totals  # NR everywhere
+    sources = np.broadcast_to(potentials, flux.shape).copy()
+    level = np.ones_like(grid)
+    inside = (grid >= e_low) & (grid <= reach)
+    order = np.nonzero(inside)[0][::-1]
+    start = int(np.searchsorted(-grid[order], -e_top, side="right"))
+    scatter = [np.where(is_clad[None, :] == (k[0] == "clad"), column(k, 2)[order][:, None], 0.0)
+               for k in tables]  # fmt: skip
+    power = sum(
+        v * sum(d * slowing_down_power(n) for n, d in dens.items())
+        for v, dens, _ in cell
+    )
+    share = sum(cell[i][0] for i in resonant) / power
+    outside = np.zeros(len(order))
+    for r, (v, dens, temp) in enumerate(cell):
+        if r in resonant:
+            continue
+        for n, d in dens.items():
+            t = cached_doppler(n, temp)
+            e_t = np.asarray(t.energies)
+            absorption = np.interp(grid[order], e_t, np.asarray(t.xs[1])) - np.interp(
+                grid[order], e_t, np.asarray(t.xs[2]))  # fmt: skip
+            outside += v * d * np.maximum(absorption, 0.0) / power
+    levels = np.ones(len(order))
+    psi = march(grid[order], totals[order], scatter, list(alphas.values()), escape[order],
+                flux[order][:start], start, share, outside, levels, collide[order],
+                table.volumes, use_rust,
+                moving=[kernels.get(k[1]) if k[0] == "fuel" else None for k in tables])  # fmt: skip
+    flux[order] = psi
+    level[order] = levels
+    # S_j from Sigma_t,i V_i (psi_i - E_i psi_M) = sum_j V_j P_ji S_j
+    vol = table.volumes
+    lhs = np.einsum("nji,j->nij", collide[order], vol)
+    rhs = totals[order] * (psi - escape[order] * levels[:, None]) * vol[None, :]
+    sources[order] = np.linalg.solve(lhs, rhs[..., None])[..., 0]
+    return CoupledFlux(
+        grid, level,
+        {x: flux[:, r] for r, x in enumerate(table.labels)},
+        {x: sources[:, r] for r, x in enumerate(table.labels)},
+    )  # fmt: skip
+
+
+def moving_kernels(
+    nuclides: tuple[str, ...],
+    temperature: float,
+    e_low: float,
+    e_top: float,
+    use_rust: bool = True,
+) -> dict[str, MovingKernel]:
+    """Free-gas elastic kernels (``moving.free_gas_kernel``) of `nuclides`
+    at `temperature`, for incoming energies in [e_low, e_top], from their
+    0 K elastic tables."""
+    from fission.endf.cache import cached_pointwise
+    from fission.pincell.moving import free_gas_kernel
+    from fission.processing.cache import COLD
+
+    out = {}
+    for n in nuclides:
+        cold = cached_pointwise(n, **COLD)
+        out[n] = free_gas_kernel(n, np.asarray(cold.energies), np.asarray(cold.xs[2]),
+                                 mass_ratio(n), temperature, e_low, e_top,
+                                 use_rust=use_rust)  # fmt: skip
+    return out
+
+
+def _with_mesh(grid, kernels, lo: float, hi: float) -> np.ndarray:
+    """The grid plus every kernel's mesh energies in [lo, hi] (``march``
+    needs them as grid points)."""
+    for k in kernels:
+        e = k.energies
+        grid = np.union1d(grid, e[(e >= lo) & (e <= hi)])
+    return grid
+
+
 def slowing_down_power(nuclide: str) -> float:
     """xi sigma_p (barns): mean lethargy gain per collision times sigma_p."""
     a = mass_ratio(nuclide)
@@ -307,6 +518,8 @@ def region_flux(
     details: dict[str, np.ndarray] | None = None,
     collisions: tuple[np.ndarray, np.ndarray] | None = None,
     use_rust: bool = True,
+    moving: tuple[str, ...] = (),
+    moving_top: float = MOVING_TOP,
 ) -> tuple[list[float], list[float]] | list[tuple[list[float], list[float]]]:
     """Flux shape of a resonant region from the slowing-down balance.
 
@@ -350,6 +563,9 @@ def region_flux(
     ("energy", "total", "source" = S / Sigma_t, "level" = psi_M, and
     "flux" or "flux/k" per ring, "source/k" with ring sources), for
     ``sph_factors``.
+
+    moving (with slowing_down): nuclides that scatter on moving targets
+    below `moving_top` (``moving_kernels``; ``march``).
     """
     tables = {n: cached_doppler(n, temperature) for n in densities}
     grid = np.unique(np.concatenate([np.asarray(t.energies) for t in tables.values()]))
@@ -358,8 +574,11 @@ def region_flux(
     reach = (
         e_top * max(1 / a for a in alphas.values()) * 1.001
     )  # top of the widest window
+    kernels: dict[str, MovingKernel] = {}
     if slowing_down:
         grid = np.union1d(grid, [e_low, e_top, reach])
+        kernels = moving_kernels(moving, temperature, e_low, moving_top, use_rust)
+        grid = _with_mesh(grid, kernels.values(), e_low, reach)
     total = np.zeros_like(grid)
     for n, t in tables.items():
         total += densities[n] * np.interp(
@@ -441,6 +660,7 @@ def region_flux(
         psi_rings = march(
             energies, total[order], scatter, [alphas[n] for n in tables], escape_k,
             nr[:start], start, share, outside, levels, collide, volumes, use_rust,
+            moving=[kernels.get(n) for n in tables],
         )  # fmt: skip
         # S_j / Sigma_t from Sigma_t V_i (psi_i - E_i psi_M) = sum_j V_j P_ji S_j
         lhs = np.einsum("nji,j->nij", collide, volumes)
@@ -459,6 +679,7 @@ def region_flux(
     psi = march(
         energies, total[order], scatter, [alphas[n] for n in tables], p[order],
         flux[order][:start], start, share, outside, levels, use_rust=use_rust,
+        moving=[kernels.get(n) for n in tables],
     )  # fmt: skip
     flux = flux.copy()
     flux[order] = psi
@@ -476,8 +697,10 @@ def region_flux(
 def sph_factors(
     problem: Problem,
     sigma_p: dict[str, float],
-    material: str,
-    details: dict[str, np.ndarray],
+    names: np.ndarray,
+    energy: np.ndarray,
+    level: np.ndarray,
+    references: dict[str, tuple[np.ndarray, np.ndarray]],
     sigma_t: dict[str, np.ndarray],
     groups: GroupStructure,
     energy_range: tuple[float, float] = SLOWING_DOWN_RANGE,
@@ -514,15 +737,15 @@ def sph_factors(
     solved together. Averages are in lethargy (the weighting function is 1/E
     throughout `energy_range`); groups outside it get mu = 1.
 
-    details: the pointwise pieces from ``region_flux``; sigma_t: the group
-    total (1/cm, without SPH) of every region label (``material`` or
-    ``material/k``).
+    names: the region label of every FSR (``Geometry.split_rings`` labels
+    for rings); energy, level: the pointwise grid and psi_M; references:
+    label -> (pointwise flux phi_k, collision source S_k) of every resonant
+    region; sigma_t: label -> group total (1/cm, without SPH). Regions not
+    in `references` are the pure absorbers Sigma_p of the model material.
     """
     g_all = problem.geometry
-    labels = sorted(sigma_t)
-    split = any("/" in label for label in labels)
-    names = np.array((g_all.split_rings(material) if split else g_all).materials())
-    e = details["energy"]
+    labels = sorted(references)
+    e = energy
     lo_range, hi_range = energy_range
     chosen = [
         g for g in range(groups.size)
@@ -544,20 +767,9 @@ def sph_factors(
             out.append(np.sum(0.5 * du * (v[1:] + v[:-1])) / du.sum())
         return np.array(out)
 
-    level = average(details["level"])
-    sources = {
-        label: average(
-            details.get("source/" + label.split("/")[-1], details["source"])
-            * details["total"]
-        )
-        for label in labels
-    }
-    reference = {
-        label: average(
-            details["flux/" + label.split("/")[1] if "/" in label else "flux"]
-        )
-        for label in labels
-    }
+    level = average(level)
+    sources = {label: average(references[label][1]) for label in labels}
+    reference = {label: average(references[label][0]) for label in labels}
     masks = {label: names == label for label in labels}
     base = np.maximum(np.array([sigma_p.get(m, 0.0) for m in g_all.materials()]), 1e-12)
     sig = np.repeat(base[:, None], len(chosen), axis=1)
@@ -565,10 +777,14 @@ def sph_factors(
     for label in labels:
         q[masks[label]] = sources[label]
     mu = {label: np.ones(len(chosen)) for label in labels}
+    # boundary fluxes carried from one iteration to the next: mu changes
+    # little, so each solve starts close to its answer
+    psi = np.zeros((len(problem.tracks), 2, len(problem.polar.sin), len(chosen)))
     for _ in range(max_iterations):
         for label in labels:
             sig[masks[label]] = mu[label] * sigma_t[label][chosen]
-        flux, _ = fixed_source(problem, sig, q / FOUR_PI, use_rust=use_rust)
+        flux, _ = fixed_source(problem, sig, q / FOUR_PI, use_rust=use_rust,
+                               boundary=psi)  # fmt: skip
         change = 0.0
         for label in labels:
             m = masks[label]
@@ -618,6 +834,9 @@ def march(
     collide: np.ndarray | None = None,
     volumes: np.ndarray | None = None,
     use_rust: bool = False,
+    moving: list[MovingKernel | None] | None = None,
+    tol: float = 1e-10,
+    max_passes: int = 200,
 ) -> np.ndarray:
     """Solve the slowing-down balance of a region on an ultra-fine grid.
 
@@ -655,47 +874,131 @@ def march(
     Glasstone's asymptotic normalization. levels: if given (length n), filled
     with psi_M at every point (1 on the history).
 
-    Several regions of the same mixture (pellet rings, volumes V_i): escape
+    Several regions (pellet rings, or rings and the clad; volumes V_i): escape
     has shape (n, R) (E_i, ``ring_escape``) and collide (n, R, R) holds
     P_j->i, the probability that a neutron born in ring j first collides in
     ring i (``collision_matrix``). Every ring keeps its own scattering
     source S_i, and the balance becomes a small linear system per point,
 
-        Sigma_t V_i psi_i = sum_j V_j P_j->i S_j + Sigma_t V_i E_i psi_M,
+        Sigma_t,i V_i psi_i = sum_j V_j P_j->i S_j + Sigma_t,i V_i E_i psi_M,
 
     which for one region is the equation above (P_1->1 = 1 - P). history
     and the result then have shape (n, R); absorption depletes psi_M with
-    the volume-averaged psi.
+    the volume-averaged absorption. Regions of different compositions (fuel
+    and clad) give total and scatter[i] shape (n, R): each nuclide's
+    macroscopic scattering in each region (zero where it is absent); a 1D
+    array means the same in every region.
+
+    moving: per nuclide, None (target at rest) or a ``MovingKernel``: below
+    its top energy the nuclide scatters on moving targets. Its source is then
+
+        S(u) = E Int Sigma_s(E') phi(E') P(E' -> E) dE'
+             = E sum_m P(E_m -> E) Phi_m,     Phi_m = Int hat_m Sigma_s psi du',
+
+    with P on the kernel's mesh (hat functions in x = sqrt(A E / kT), the
+    mesh energies must be grid points) and S interpolated linearly in x
+    between the nodes. A moving target can also *raise* the neutron's
+    energy, so the source at u depends on psi below u, which the march has
+    not reached yet. The march is therefore repeated (Gauss-Seidel): the
+    first pass treats every target at rest, and every later pass takes Phi
+    from this pass where the march has passed and from the previous pass
+    elsewhere, until psi changes by less than `tol` (relative). The at-rest
+    window of that nuclide then covers only scattering from above the top.
 
     use_rust: the same march in Rust (``slowing.rs``, ~1e-12 parity).
     """
     if use_rust:
         return _rust_march(energies, total, scatter, alphas, escape, history, start,
-                           share, outside_absorption, levels, collide, volumes)  # fmt: skip
-    u = np.log(energies[0] / energies)
-    n = len(energies)
+                           share, outside_absorption, levels, collide, volumes,
+                           moving, tol, max_passes)  # fmt: skip
     single = collide is None
     if single:
         collide = (1.0 - escape)[:, None, None]
         escape = escape[:, None]
         volumes = np.ones(1)
     regions = escape.shape[1]
-    v = np.ones(regions) if volumes is None else np.asarray(volumes, dtype=float)
+    totals = _per_region(total, regions)
+    scatters = [_per_region(sc, regions) for sc in scatter]
+    hist = np.asarray(history, dtype=float).reshape(start, regions)
+    kernels = [None] * len(alphas) if moving is None else list(moving)
+    targets = [_Targets(k, energies, start) if k is not None else None for k in kernels]
+    passes = [None] if not any(targets) else [None, *range(max_passes)]
+    phi = [None if t is None else np.zeros((t.kernel.nodes, regions)) for t in targets]
+    psi = None
+    for p in passes:
+        rest = p is None  # the first pass treats every target at rest
+        new, phi_new = _march_pass(energies, totals, scatters, alphas, escape, hist,
+                                   start, share, outside_absorption, levels, collide,
+                                   volumes, targets, phi, rest, single)  # fmt: skip
+        if psi is not None:
+            change = float(np.max(np.abs(new - psi) / np.maximum(np.abs(new), 1e-300)))
+            psi, phi = new, phi_new
+            if change < tol:
+                break
+        else:
+            psi, phi = new, phi_new
+    else:
+        if any(targets):
+            raise RuntimeError(
+                f"moving-target iterations: no convergence in {max_passes}"
+            )
+    assert psi is not None
+    return psi[:, 0] if single else psi
+
+
+class _Targets:
+    """Where every march point sits on the mesh of a ``MovingKernel``."""
+
+    def __init__(self, kernel: MovingKernel, energies: np.ndarray, start: int):
+        self.kernel = kernel
+        # node coordinate of every point (x - base) / dx
+        self.p = (np.sqrt(kernel.scale * energies) - kernel.base) / kernel.dx
+        # segments [k-1, k] below the top of the range: their scattering goes
+        # through the kernel (Phi), the ones above through the at-rest window
+        top = kernel.e_top * (1.0 + 1e-12)
+        self.on = (energies >= kernel.e_top * (1.0 - 1e-12)).astype(float)
+        self.below = np.zeros(len(energies), dtype=bool)
+        self.below[1:] = energies[:-1] <= top
+        self.below[:start] = False
+        n = kernel.nodes
+        self.cell = np.clip(np.floor(self.p + 1e-9).astype(np.int64), 0, n - 2)
+        for k in np.nonzero(self.below)[0]:
+            if self.p[k - 1] - self.cell[k] > 1.0 + 1e-6:
+                raise ValueError("the kernel's mesh energies must be grid points")
+
+
+def _march_pass(energies, totals, scatters, alphas, escape, hist, start, share,
+                outside_absorption, levels, collide, volumes, targets, phi_old,
+                rest, single):  # fmt: skip
+    """One march down the grid (``march``); returns psi (n, R) and the hat
+    moments Phi of every moving nuclide accumulated on the way."""
+    u = np.log(energies[0] / energies)
+    n = len(energies)
+    regions = escape.shape[1]
+    v = np.asarray(volumes, dtype=float)
     weights = v / v.sum()
     psi = np.zeros((n, regions))
-    psi[:start] = np.asarray(history, dtype=float).reshape(start, regions)
+    psi[:start] = hist
     deltas = [float(np.log(1.0 / a)) for a in alphas]
     if u[start - 1] < max(deltas):
         raise ValueError(
             "the history must span the widest scattering window (ln 1/alpha)"
         )
     factors = [1.0 / (1.0 - a) for a in alphas]
+    # on[i][k]: segment [k-1, k] scatters at rest (1) or through the kernel (0)
+    on = [np.ones(n) if rest or t is None else t.on for t in targets]
     cumulative = [np.zeros((n, regions)) for _ in alphas]
-    f = [s[:, None] * psi * np.exp(u)[:, None] for s in scatter]  # valid on the history
+    f = [sc * psi * np.exp(u)[:, None] for sc in scatters]  # valid on the history
     for c, fi in zip(cumulative, f, strict=True):
         c[1:start] = np.cumsum(
             0.5 * np.diff(u[:start])[:, None] * (fi[1:start] + fi[: start - 1]), axis=0
         )
+    phi_new = [
+        None if t is None else np.zeros_like(p)
+        for t, p in zip(targets, phi_old, strict=True)
+    ]
+    sources = [None if t is None else np.full((t.kernel.nodes, regions), np.nan)
+               for t in targets]  # fmt: skip
     pointer = [0] * len(alphas)  # first grid index with u >= u_k - Delta_i
     level = 1.0  # psi_M
     if levels is not None:
@@ -703,8 +1006,8 @@ def march(
     for k in range(start, n):
         h = u[k] - u[k - 1]
         eu = np.exp(u[k])
-        known = np.zeros(regions)  # S_i without the unknown psi_i(u_k)
-        coefficient = 0.0  # d S_i / d psi_i(u_k), the same in every ring
+        known = np.zeros(regions)  # S_r without the unknown psi_r(u_k)
+        coefficient = np.zeros(regions)  # d S_r / d psi_r(u_k)
         for i, delta in enumerate(deltas):
             lower = u[k] - delta
             j = pointer[i]
@@ -712,32 +1015,34 @@ def march(
                 j += 1
             pointer[i] = j
             c = cumulative[i]
+            o = on[i]
             if j + 1 < k:
                 # C at the window's lower edge with the same trapezoid rule as
                 # C itself (the integrand interpolated linearly), so that both
                 # ends of the window are treated alike and their errors cancel
                 t = (lower - u[j]) / (u[j + 1] - u[j])
                 g_lower = f[i][j] + t * (f[i][j + 1] - f[i][j])
-                c_lower = c[j] + 0.5 * (lower - u[j]) * (f[i][j] + g_lower)
-                window = c[k - 1] + 0.5 * h * f[i][k - 1] - c_lower
-                weight_k = 0.5 * h  # of f_k in the window integral
+                c_lower = c[j] + o[j + 1] * 0.5 * (lower - u[j]) * (f[i][j] + g_lower)
+                window = c[k - 1] + o[k] * 0.5 * h * f[i][k - 1] - c_lower
+                weight_k = o[k] * 0.5 * h  # of f_k in the window integral
             else:
                 # the whole window lies inside the last step (a very heavy
                 # nuclide): the trapezoid from the lower edge to u_k, with the
                 # integrand at the edge interpolated between f_{k-1} and f_k
                 t = (lower - u[k - 1]) / h
                 width = u[k] - lower
-                window = 0.5 * width * (1.0 - t) * f[i][k - 1]
-                weight_k = 0.5 * width * (1.0 + t)
+                window = o[k] * 0.5 * width * (1.0 - t) * f[i][k - 1]
+                weight_k = o[k] * 0.5 * width * (1.0 + t)
             known += factors[i] * window / eu
-            coefficient += factors[i] * weight_k * scatter[i][k]
+            coefficient += factors[i] * weight_k * scatters[i][k]
+            tg = targets[i]
+            if tg is not None and not rest:
+                known += energies[k] * _moving_source(tg, k, phi_new[i], phi_old[i],
+                                                      sources[i])  # fmt: skip
         # the moderator level, depleted by absorption up to the previous point
         if share > 0.0 or outside_absorption is not None:
-            absorbed = (
-                share
-                * (total[k - 1] - sum(sc[k - 1] for sc in scatter))
-                * float(weights @ psi[k - 1])
-            )
+            absorption = totals[k - 1] - sum(sc[k - 1] for sc in scatters)
+            absorbed = share * float(weights @ (absorption * psi[k - 1]))
             if outside_absorption is not None:
                 absorbed += outside_absorption[k - 1] * level
             level -= h * absorbed
@@ -745,25 +1050,95 @@ def march(
             levels[k] = level
         if single:
             p = escape[k, 0]
-            psi[k, 0] = ((1.0 - p) * known[0] + p * total[k] * level) / (
-                total[k] - (1.0 - p) * coefficient
+            psi[k, 0] = ((1.0 - p) * known[0] + p * totals[k, 0] * level) / (
+                totals[k, 0] - (1.0 - p) * coefficient[0]
             )
         else:
-            assert collide is not None
-            # Sigma_t V_i psi_i - coef sum_j V_j P_ji psi_j
-            #     = sum_j V_j P_ji known_j + Sigma_t V_i E_i psi_M
+            # Sigma_t,i V_i psi_i - sum_j V_j P_ji coef_j psi_j
+            #     = sum_j V_j P_ji known_j + Sigma_t,i V_i E_i psi_M
             transfer = collide[k].T * v[None, :]  # [i, j] = V_j P_j->i
-            a = np.diag(total[k] * v) - coefficient * transfer
-            b = transfer @ known + total[k] * v * escape[k] * level
+            a = np.diag(totals[k] * v) - transfer * coefficient[None, :]
+            b = transfer @ known + totals[k] * v * escape[k] * level
             psi[k] = np.linalg.solve(a, b)
         for i in range(len(deltas)):
-            f[i][k] = scatter[i][k] * psi[k] * eu
-            cumulative[i][k] = cumulative[i][k - 1] + 0.5 * h * (f[i][k - 1] + f[i][k])
-    return psi[:, 0] if single else psi
+            f[i][k] = scatters[i][k] * psi[k] * eu
+            cumulative[i][k] = cumulative[i][k - 1] + on[i][k] * 0.5 * h * (
+                f[i][k - 1] + f[i][k]
+            )
+            tg = targets[i]
+            if tg is not None and tg.below[k]:
+                # hat moments Phi_m = Int hat_m Sigma_s psi du of this segment
+                j, p0, p1 = tg.cell[k], tg.p[k - 1], tg.p[k]
+                g0, g1 = scatters[i][k - 1] * psi[k - 1], scatters[i][k] * psi[k]
+                t0, t1 = p0 - j, p1 - j
+                phi_new[i][j] += 0.5 * h * ((1.0 - t0) * g0 + (1.0 - t1) * g1)
+                phi_new[i][j + 1] += 0.5 * h * (t0 * g0 + t1 * g1)
+    for i, tg in enumerate(targets):
+        if tg is not None:
+            _below_the_range(tg, energies[0], scatters[i][-1] * psi[-1], phi_new[i])
+    return psi, phi_new
+
+
+def _below_the_range(tg: _Targets, e0: float, g: np.ndarray, phi: np.ndarray) -> None:
+    """Hat moments below the last grid point, with Sigma_s psi continued flat.
+
+    Neutrons below the march (e.g. under 1 eV) also scatter up into it;
+    without them the flux would dip at the bottom of the range. The segments
+    run from the last point down through the mesh nodes, with the same
+    trapezoid rule as the march's own segments.
+    """
+    kernel = tg.kernel
+    top = tg.p[-1]
+    node = math.floor(top + 1e-9)
+    if abs(top - round(top)) < 1e-9:
+        node = round(top) - 1
+    while node >= 0:
+        e_hi = (kernel.base + top * kernel.dx) ** 2 / kernel.scale
+        e_lo = (kernel.base + node * kernel.dx) ** 2 / kernel.scale
+        h = math.log(e0 / e_lo) - math.log(e0 / e_hi)
+        t0 = top - node
+        phi[node] += 0.5 * h * ((1.0 - t0) * g + g)
+        phi[node + 1] += 0.5 * h * (t0 * g)
+        top, node = float(node), node - 1
+
+
+def _moving_source(tg: _Targets, k: int, phi_new: np.ndarray, phi_old: np.ndarray,
+                   cache: np.ndarray) -> np.ndarray:  # fmt: skip
+    """s(E_k) = sum_m P(E_m -> E_k) Phi_m per unit energy, interpolated
+    linearly in x between the mesh nodes around E_k (zero off the mesh).
+
+    Gauss-Seidel: hats the march has already passed (x_{m-1} >= x_{k-1}) use
+    this pass's Phi, the others the previous pass's. s_n is computed the
+    first time the march needs it and kept for the pass.
+    """
+    kernel = tg.kernel
+    p = tg.p[k]
+    if p < 0.0 or p > kernel.nodes - 1:
+        return np.zeros(phi_new.shape[1])
+    j = int(tg.cell[k])
+    theta = max(p - j, 0.0)
+    above = tg.p[k - 1]
+    q = math.floor(above + 1e-9)
+    done = q + 1 if abs(above - round(above)) < 1e-9 else q + 2  # first complete hat
+    out = np.zeros(phi_new.shape[1])
+    for node, weight in ((j, 1.0 - theta), (j + 1, theta)):
+        if np.isnan(cache[node, 0]):
+            rows, values = kernel.column(node)
+            current = np.where((rows >= done)[:, None], phi_new[rows], phi_old[rows])
+            cache[node] = values @ current
+        out += weight * cache[node]
+    return out
+
+
+def _per_region(a: np.ndarray, regions: int) -> np.ndarray:
+    """(n,) -> (n, R) by repetition; (n, R) unchanged."""
+    a = np.asarray(a, dtype=float)
+    return np.repeat(a[:, None], regions, axis=1) if a.ndim == 1 else a
 
 
 def _rust_march(energies, total, scatter, alphas, escape, history, start, share,
-                outside_absorption, levels, collide, volumes):  # fmt: skip
+                outside_absorption, levels, collide, volumes, moving=None, tol=1e-10,
+                max_passes=200):  # fmt: skip
     from fission import _rust
 
     single = collide is None
@@ -772,11 +1147,14 @@ def _rust_march(energies, total, scatter, alphas, escape, history, start, share,
     def flat(a) -> np.ndarray:
         return np.ascontiguousarray(a, dtype=float).ravel()
 
+    totals = _per_region(total, regions)
+    scatters = np.array([_per_region(sc, regions) for sc in scatter])
     psi, level = _rust.slowing_down_march(
-        flat(energies), flat(total), flat(np.array(scatter)), flat(alphas),
+        flat(energies), flat(totals), flat(scatters), flat(alphas),
         flat(escape), flat([] if single else collide),
         flat(np.ones(1) if single else volumes), flat(history), start, share,
         flat([] if outside_absorption is None else outside_absorption),
+        [] if moving is None else list(moving), tol, max_passes,
     )  # fmt: skip
     if levels is not None:
         levels[:] = level

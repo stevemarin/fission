@@ -3,8 +3,8 @@
 Along a track p(t) = p0 + t d (|d| = 1, 0 <= t <= L) the region changes
 only where the track crosses a surface. There are three kinds of surface:
 
-* the grid lines between cells, x = i p and y = j p:
-  t = (i p - x0) / d_x, and the same for y;
+* the grid lines between cells, x = g + i p and y = g + j p (g: the gap
+  around the lattice, usually 0): t = (g + i p - x0) / d_x, and the same for y;
 * the circles of a cell, |p(t) - c| = r:
   t^2 + 2 b t + q = 0 with b = d . (p0 - c), q = |p0 - c|^2 - r^2,
   so t = -b +- sqrt(b^2 - q) when b^2 > q;
@@ -53,19 +53,19 @@ def trace_track(
     geometry: Geometry, x0: float, y0: float, x1: float, y1: float
 ) -> list[tuple[int, float]]:
     """(region, length) of every segment of the track from (x0, y0) to (x1, y1)."""
-    p = geometry.pitch
+    p, g = geometry.pitch, geometry.gap
     length = math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))
     dx, dy = (x1 - x0) / length, (y1 - y0) / length
     # crossings of the grid lines between cells
     cuts = [0.0, length]
     if dx != 0.0:
         for i in range(1, geometry.nx):
-            t = (i * p - x0) / dx
+            t = (g + i * p - x0) / dx
             if 0.0 < t < length:
                 cuts.append(t)
     if dy != 0.0:
         for j in range(1, geometry.ny):
-            t = (j * p - y0) / dy
+            t = (g + j * p - y0) / dy
             if 0.0 < t < length:
                 cuts.append(t)
     cuts.sort()
@@ -78,7 +78,7 @@ def trace_track(
         ix, iy = geometry.cell_at(x0 + tm * dx, y0 + tm * dy)
         cell = iy * geometry.nx + ix
         mesh = geometry.cells[cell]
-        cx, cy = (ix + 0.5) * p, (iy + 0.5) * p
+        cx, cy = geometry.centre(ix, iy)
         # crossings inside this cell: circles, then sector lines
         local = [a, b]
         ox, oy = x0 - cx, y0 - cy
@@ -129,7 +129,7 @@ def trace(geometry: Geometry, tracks: TrackSet, use_rust: bool = True) -> Segmen
 
         region, length, start = _rust.trace_tracks(
             geometry.pitch, geometry.nx, geometry.ny, *_cell_arrays(geometry),
-            tracks.x0, tracks.y0, tracks.x1, tracks.y1,
+            tracks.x0, tracks.y0, tracks.x1, tracks.y1, geometry.gap,
         )  # fmt: skip
         return Segments(region, length, start)
     regions: list[int] = []

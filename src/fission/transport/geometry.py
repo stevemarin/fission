@@ -15,6 +15,11 @@ rectangular grid of square cells of one pitch. Every cell is a pin
 FSR numbering: cell (ix, iy), counted from the bottom-left with ix fastest,
 owns regions offset[cell] + ring * sectors + sector, ring 0 at the centre
 and sector 0 starting at angle 0 (the +x direction).
+
+An assembly lattice may be surrounded by a water **gap** (half the space
+between neighbouring assemblies). It adds no regions: a point in the gap
+belongs to the outermost region of the nearest edge cell (same sector, by
+angle from that cell's centre), whose area grows by its share of the gap.
 """
 
 from __future__ import annotations
@@ -54,9 +59,17 @@ class CellMesh:
         sector = min(int(theta / (TWO_PI / self.sectors)), self.sectors - 1)
         return ring * self.sectors + sector
 
-    def areas(self, pitch: float) -> list[float]:
-        """Exact area (cm^2) of every local FSR."""
+    def areas(
+        self, pitch: float, extents: tuple[float, float, float, float] | None = None
+    ) -> list[float]:
+        """Exact area (cm^2) of every local FSR.
+
+        extents: distances (left, right, bottom, top) from the centre to the
+        edges of the region the cell covers, if not the square of side
+        `pitch` (edge cells of a lattice with a gap)."""
         n = self.sectors
+        h = pitch / 2
+        left, right, bottom, top = extents or (h, h, h, h)
         out = []
         inner = 0.0
         for r in self.radii:  # annuli: every sector of a circle has 1/n of its area
@@ -65,25 +78,40 @@ class CellMesh:
         for k in range(
             n
         ):  # outside the last circle: wedge of the square minus wedge of the disc
-            wedge = _wedge_of_square(TWO_PI * k / n, TWO_PI * (k + 1) / n, pitch / 2)
+            wedge = _wedge_of_rectangle(
+                TWO_PI * k / n, TWO_PI * (k + 1) / n, left, right, bottom, top
+            )
             out.append(wedge - math.pi * inner * inner / n)
         return out
 
 
-def _wedge_of_square(theta1: float, theta2: float, half: float) -> float:
-    """Area of the part of the square |x|, |y| <= half between two angles."""
+def _wedge_of_rectangle(
+    theta1: float, theta2: float, left: float, right: float, bottom: float, top: float
+) -> float:
+    """Area of the part of the rectangle -left <= x <= right, -bottom <= y <= top
+    (which contains the origin) between the rays at two angles (0 <= theta1 <
+    theta2 <= 2 pi)."""
 
     def edge(theta: float) -> tuple[float, float]:
         c, s = math.cos(theta), math.sin(theta)
-        scale = half / max(abs(c), abs(s))
+        scale = math.inf
+        if c > 0:
+            scale = min(scale, right / c)
+        elif c < 0:
+            scale = min(scale, left / -c)
+        if s > 0:
+            scale = min(scale, top / s)
+        elif s < 0:
+            scale = min(scale, bottom / -s)
         return c * scale, s * scale
 
-    points = [(0.0, 0.0), edge(theta1)]
-    for k in range(8):  # the corners, at 45 + 90 k degrees
-        corner = math.pi / 4 + k * math.pi / 2
-        if theta1 < corner < theta2:
-            points.append(edge(corner))
-    points.append(edge(theta2))
+    corners = [(right, top), (-left, top), (-left, -bottom), (right, -bottom)]
+    inside = sorted(
+        (math.atan2(y, x) % TWO_PI, x, y)
+        for x, y in corners
+        if theta1 < math.atan2(y, x) % TWO_PI < theta2
+    )
+    points = [(0.0, 0.0), edge(theta1), *((x, y) for _, x, y in inside), edge(theta2)]
     area = 0.0
     for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1], strict=True):
         area += x1 * y2 - x2 * y1  # shoelace formula
@@ -106,14 +134,31 @@ class Geometry:
     nx: int
     ny: int
     cells: tuple[CellMesh, ...]  # index iy * nx + ix
+    gap: float = 0.0  # water around the lattice, on every side (cm)
 
     @property
     def width(self) -> float:
-        return self.nx * self.pitch
+        return self.nx * self.pitch + 2 * self.gap
 
     @property
     def height(self) -> float:
-        return self.ny * self.pitch
+        return self.ny * self.pitch + 2 * self.gap
+
+    def centre(self, ix: int, iy: int) -> tuple[float, float]:
+        return self.gap + (ix + 0.5) * self.pitch, self.gap + (iy + 0.5) * self.pitch
+
+    def cell_widths(self) -> tuple[np.ndarray, np.ndarray]:
+        """Widths of the cell columns and heights of the rows (edge cells
+        include the gap)."""
+        wx = np.full(self.nx, self.pitch)
+        wy = np.full(self.ny, self.pitch)
+        wx[[0, -1]] += self.gap
+        wy[[0, -1]] += self.gap
+        if self.nx == 1:
+            wx[0] = self.pitch + 2 * self.gap
+        if self.ny == 1:
+            wy[0] = self.pitch + 2 * self.gap
+        return wx, wy
 
     @property
     def offsets(self) -> list[int]:
@@ -128,16 +173,16 @@ class Geometry:
         return sum(c.regions for c in self.cells)
 
     def cell_at(self, x: float, y: float) -> tuple[int, int]:
-        ix = min(max(int(x / self.pitch), 0), self.nx - 1)
-        iy = min(max(int(y / self.pitch), 0), self.ny - 1)
+        ix = min(max(int((x - self.gap) / self.pitch), 0), self.nx - 1)
+        iy = min(max(int((y - self.gap) / self.pitch), 0), self.ny - 1)
         return ix, iy
 
     def region(self, x: float, y: float) -> int:
         """Global FSR of a point inside the lattice."""
         ix, iy = self.cell_at(x, y)
         cell = iy * self.nx + ix
-        dx = x - (ix + 0.5) * self.pitch
-        dy = y - (iy + 0.5) * self.pitch
+        cx, cy = self.centre(ix, iy)
+        dx, dy = x - cx, y - cy
         return self.offsets[cell] + self.cells[cell].region(dx, dy)
 
     def materials(self) -> list[str]:
@@ -162,11 +207,20 @@ class Geometry:
                 else:
                     labels.append(m)
             cells.append(CellMesh(c.radii, tuple(labels), c.sectors))
-        return Geometry(self.pitch, self.nx, self.ny, tuple(cells))
+        return Geometry(self.pitch, self.nx, self.ny, tuple(cells), self.gap)
 
     def areas(self) -> np.ndarray:
         """Exact area of every FSR (cm^2)."""
-        return np.concatenate([c.areas(self.pitch) for c in self.cells])
+        h, g = self.pitch / 2, self.gap
+        out = []
+        for i, c in enumerate(self.cells):
+            ix, iy = i % self.nx, i // self.nx
+            extents = (
+                h + (g if ix == 0 else 0.0), h + (g if ix == self.nx - 1 else 0.0),
+                h + (g if iy == 0 else 0.0), h + (g if iy == self.ny - 1 else 0.0),
+            )  # fmt: skip
+            out.append(c.areas(self.pitch, extents))
+        return np.concatenate(out)
 
     def cell_of_regions(self) -> np.ndarray:
         """Index of the cell that contains each FSR."""
@@ -209,6 +263,8 @@ class Geometry:
                         model, seg.lattice, rings, sectors, outer_ring
                     )
                 bottom += seg.height
+        if any(g.gap for g in slices.values()):
+            raise ValueError("lattices with a gap are not supported in a core map yet")
         pitches = {g.pitch for g in slices.values()}
         if len(pitches) != 1:
             raise ValueError(f"lattices at z = {level:g} cm have different pin pitches")
@@ -269,4 +325,4 @@ class Geometry:
         cells = tuple(
             meshes[lat.pins[n - 1 - iy][ix]] for iy in range(n) for ix in range(n)
         )
-        return cls(lat.pitch, n, n, cells)
+        return cls(lat.pitch, n, n, cells, lat.gap)

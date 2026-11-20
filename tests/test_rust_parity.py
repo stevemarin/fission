@@ -208,3 +208,89 @@ def test_slowing_down_march(regions):
     np.testing.assert_allclose(rs, py, rtol=1e-12, atol=0)
     np.testing.assert_allclose(lv_rs, lv_py, rtol=1e-12, atol=0)
     assert np.min(py) < 0.5  # the resonances really dip the flux
+
+
+def test_slowing_down_march_mixed_regions():
+    """Fuel rings and a clad: each region its own total and scatterers."""
+    from fission.pincell.shielding import march
+
+    kw = _march_problem(3)
+    e = kw["energies"]
+    clad_res = 8.0 / (1 + ((e - 60.0) / 0.3) ** 2)  # a resonance of the "clad" only
+    total = np.stack([kw["total"], kw["total"], 0.4 + clad_res], axis=1)
+    scatter = [np.stack([s, s, np.zeros_like(s)], axis=1) for s in kw["scatter"]] + [
+        np.stack([np.zeros_like(e), np.zeros_like(e), 0.38 + 0.5 * clad_res], axis=1)
+    ]
+    kw.update(total=total, scatter=scatter, alphas=[*kw["alphas"], (89.0 / 91.0) ** 2])
+    lv_py, lv_rs = np.zeros(len(e)), np.zeros(len(e))
+    py = march(**kw, share=0.05, levels=lv_py)
+    rs = march(**kw, share=0.05, levels=lv_rs, use_rust=True)
+    np.testing.assert_allclose(rs, py, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(lv_rs, lv_py, rtol=1e-12, atol=0)
+    assert not np.allclose(py[:, 2], py[:, 0])  # the clad differs
+
+
+# ---------------------------------------------------------------- moving targets
+def _synthetic_elastic():
+    """A 0 K elastic table with two narrow resonances (36 and 41 eV)."""
+    e = np.geomspace(1e-5, 2e7, 400)
+    e = np.union1d(
+        e, np.concatenate([np.linspace(35.5, 36.5, 300), np.linspace(40.5, 41.5, 300)])
+    )
+    s = (
+        9.0
+        + 400.0 / (1 + ((e - 36.0) / 0.03) ** 2)
+        + 150.0 / (1 + ((e - 41.0) / 0.05) ** 2)
+    )
+    return e, s
+
+
+def test_free_gas_kernel():
+    from fission.pincell.moving import free_gas_kernel
+
+    e, s = _synthetic_elastic()
+    py = free_gas_kernel("X", e, s, 238.0, 900.0, 30.0, 45.0)
+    rs = free_gas_kernel("X", e, s, 238.0, 900.0, 30.0, 45.0, use_rust=True)
+    for name in ("scale", "base", "dx", "top", "nodes"):
+        assert getattr(rs, name) == getattr(py, name)
+    np.testing.assert_array_equal(rs.starts, py.starts)
+    np.testing.assert_array_equal(rs.rows, py.rows)
+    np.testing.assert_allclose(rs.values, py.values, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(rs.norm, py.norm, rtol=1e-12, atol=0, equal_nan=True)
+
+
+@pytest.mark.parametrize("regions", [1, 3])
+def test_slowing_down_march_moving_targets(regions):
+    """The absorber (A = 238) scatters on moving targets below 45 eV."""
+    from fission.pincell.moving import free_gas_kernel
+    from fission.pincell.shielding import march
+
+    e0, s0 = _synthetic_elastic()
+    kernel = free_gas_kernel("X", e0, s0, 238.0, 900.0, 30.0, 45.0, use_rust=True)
+    e = np.geomspace(120.0 * math.exp(0.8), 30.0, 4000)
+    mesh = kernel.energies
+    e = np.union1d(e, mesh[(mesh >= 30.0) & (mesh <= e[0])])[::-1]
+    u = np.log(e[0] / e)
+    start = int(np.searchsorted(u, 0.8)) + 1
+    sigma = np.interp(e, e0, s0)
+    moderator = np.full_like(e, 1.0)
+    absorber = 0.02 * sigma  # broadening is not the point here
+    res = 0.02 * 300.0 / (1 + ((e - 36.0) / 0.1) ** 2)  # some capture
+    total = moderator + absorber + res
+    p = 0.2 + 0.6 * total / (total + 1.0)
+    kw = {"energies": e, "total": total, "scatter": [moderator, absorber],
+          "alphas": [0.5, (237.0 / 239.0) ** 2], "start": start}  # fmt: skip
+    if regions == 1:
+        kw.update(escape=1 - p, history=np.ones(start))
+    else:
+        base = np.random.default_rng(5).uniform(0.1, 1.0, (regions, regions))
+        collide = (base / base.sum(axis=1, keepdims=True))[None] * p[:, None, None]
+        kw.update(escape=1.0 - collide.sum(axis=2), history=np.ones((start, regions)),
+                  collide=collide, volumes=np.array([1.0, 1.3, 0.7]))  # fmt: skip
+    lv_py, lv_rs = np.zeros(len(e)), np.zeros(len(e))
+    py = march(**kw, share=0.05, levels=lv_py, moving=[None, kernel])
+    rs = march(**kw, share=0.05, levels=lv_rs, moving=[None, kernel], use_rust=True)
+    np.testing.assert_allclose(rs, py, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(lv_rs, lv_py, rtol=1e-12, atol=0)
+    rest = march(**kw, share=0.05, use_rust=True)
+    assert np.max(np.abs(py / rest - 1)) > 1e-3  # the kernel really acts

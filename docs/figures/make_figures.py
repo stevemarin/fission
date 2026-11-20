@@ -1019,7 +1019,7 @@ def fig_sph_rings():
     from fission.transport import Geometry, cyclic_tracks
     from fission.transport.moc import tracking
 
-    r = run("1A", "sd", sph=True)
+    r = run("1A", "sd", azim=64, spacing=0.02, fuel_rings=3, sph=True)  # quick tracking
     mu = r.sph["fuel"]
     model = load_model("vera-p1")
     st = model.states["1A"]

@@ -295,12 +295,18 @@ def _sph_case(group_edges, resonance):
     return p, sigma_p, details, groups, sigma_t, (sigmas, esc), average
 
 
-def test_sph_is_one_without_structure():
+def _sph(p, sigma_p, details, groups, sigma_t):
     from fission.pincell.shielding import sph_factors
 
+    references = {"fuel": (details["flux"], details["source"] * details["total"])}
+    return sph_factors(p, sigma_p, np.array(p.geometry.materials()), details["energy"],
+                       details["level"], references, {"fuel": sigma_t}, groups,
+                       energy_range=(1.0, 100.0))  # fmt: skip
+
+
+def test_sph_is_one_without_structure():
     p, sigma_p, details, groups, sigma_t, _, _ = _sph_case((100.0, 10.0, 1.0), False)
-    mu = sph_factors(p, sigma_p, "fuel", details, {"fuel": sigma_t}, groups,
-                     energy_range=(1.0, 100.0))  # fmt: skip
+    mu = _sph(p, sigma_p, details, groups, sigma_t)
     np.testing.assert_allclose(mu["fuel"], 1.0, atol=1e-6)
 
 
@@ -309,13 +315,10 @@ def test_sph_preserves_the_collision_rate():
     mu phi_MG(mu) = <phi>, phi_MG = P(mu Sigma) + (1 - P) Sigma_p / (mu Sigma);
     the resonance group gets mu < 1 (the flux-weighted Sigma_g alone
     overestimates the collision rate) and mu Sigma_g phi_MG = <Sigma_t phi>."""
-    from fission.pincell.shielding import sph_factors
-
     p, sigma_p, details, groups, sigma_t, (sigmas, esc), average = _sph_case(
         (100.0, 30.0, 10.0, 1.0), True
     )
-    mu = sph_factors(p, sigma_p, "fuel", details, {"fuel": sigma_t}, groups,
-                     energy_range=(1.0, 100.0))["fuel"]  # fmt: skip
+    mu = _sph(p, sigma_p, details, groups, sigma_t)["fuel"]
     g = 1  # 10-30 eV holds the resonance
     assert mu[g] < 0.99
     np.testing.assert_allclose(mu[[0, 2]], 1.0, atol=2e-3)
@@ -324,3 +327,25 @@ def test_sph_preserves_the_collision_rate():
     phi_mg = pg + (1 - pg) * 0.4 / s
     reference = average(details["total"] * details["flux"], *groups.bounds(g))
     assert s * phi_mg == pytest.approx(reference, rel=3e-3)  # P table vs MOC
+
+
+def test_coupled_table_reciprocity_and_consistency():
+    """Rings + clad: V_j Sigma_j P_j->i = V_i Sigma_i P_i->j with different
+    cross sections in fuel and clad; with the clad at its outside value,
+    collisions in the clad plus escape beyond it are the rings' escape."""
+    from fission.pincell.shielding import coupled_collisions, ring_escape
+
+    p = _tracking(_cell())
+    sigma = {"fuel": 0.4, "clad": 0.3, "water": 1.1}
+    t = coupled_collisions(p, sigma, np.array([0.1, 2.0]), np.array([0.3, 5.0]))
+    assert t.labels == ["fuel/0", "fuel/1", "clad"]
+    sig_r = np.array([2.0, 2.0, 5.0])
+    m = t.volumes[:, None] * sig_r[:, None] * t.collide[1, 1]
+    np.testing.assert_allclose(m, m.T, rtol=5e-3)
+    _, rings = ring_escape(p, sigma, "fuel", np.array([0.1, 2.0]))
+    for a in range(2):
+        beyond = 1 - t.collide[a, 0, :2, :2].sum(axis=1)  # leaves the fuel
+        np.testing.assert_allclose(beyond, rings[:, a], rtol=3e-3, atol=1e-5)
+    # bilinear interpolation reproduces the nodes
+    np.testing.assert_allclose(t.at(np.array([2.0]), np.array([0.3]))[0],
+                               t.collide[1, 0], rtol=1e-12)  # fmt: skip

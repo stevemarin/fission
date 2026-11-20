@@ -13,7 +13,7 @@ into constants for such a node, in three steps:
 
 Each step preserves reaction rates by construction, and the tests check that
 it does to rounding error. Here a "cell" is one pin; a 17×17 assembly works
-the same way (step C4).
+the same way (chapter 19).
 
 ## Homogenization
 
@@ -47,7 +47,7 @@ Two remarks on what this does not preserve:
   one, to reproduce the interface currents. In a lattice of identical cells
   every interface sees the same factor on both sides, and it cancels. The
   constants written here therefore carry factors of 1. They will become
-  meaningful with the assembly calculation (C4).
+  meaningful with the assembly calculation (chapter 19).
 * **The transport correction.** MOC used the outflow-corrected total
   (chapter 16). The homogenization uses the plain total and both
   scattering moments, because the next step treats anisotropic scattering

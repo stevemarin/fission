@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from fission.model import Model, load_model, number_densities
+from fission.processing.doppler import BOLTZMANN_EV_PER_K
 from fission.processing.groups import XMAS_172
 
 from .run import UNSUPPORTED
@@ -47,14 +48,26 @@ def spec(
     batches: int = 250,
     inactive: int = 50,
     ptables: bool = True,
+    free_gas_cutoff: float | None = None,
+    resonance_scattering: bool = False,
 ) -> dict:
-    """JSON-ready description of one pin cell at one state."""
+    """JSON-ready description of a pin lattice (or a single pin cell) at one state."""
     m = load_model(model) if isinstance(model, str) else model
     st = m.states[state]
     lat = m.lattices[lattice]
-    if lat.pins is None or lat.pitch is None or len(lat.pins) != 1:
-        raise ValueError("the OpenMC check handles a single pin cell")
-    pin = m.pins[lat.pins[0][0]]
+    if lat.pins is None or lat.pitch is None:
+        raise ValueError("the OpenMC check needs a pin lattice")
+    used = {p for row in lat.pins for p in row}
+    pins = {
+        name: {
+            "radii": list(m.pins[name].radii),
+            "materials": list(m.pins[name].materials),
+            "pieces": [
+                fuel_rings if mm == "fuel" else 1 for mm in m.pins[name].materials[:-1]
+            ],
+        }
+        for name in sorted(used)
+    }
     materials = {}
     for name, mat in m.materials.items():
         dens = number_densities(mat, st)
@@ -74,9 +87,10 @@ def spec(
         "name": f"{m.name} {state}",
         "state": state,
         "pitch": lat.pitch,
-        "radii": list(pin.radii),
-        "ring_materials": list(pin.materials),
-        "pieces": [fuel_rings if mm == "fuel" else 1 for mm in pin.materials[:-1]],
+        "gap": lat.gap,
+        "gap_material": m.pins[lat.pins[0][0]].materials[-1],
+        "map": [list(row) for row in lat.pins],
+        "pins": pins,
         "materials": materials,
         "groups": list(XMAS_172.boundaries),
         "settings": {
@@ -84,6 +98,36 @@ def spec(
             "batches": batches,
             "inactive": inactive,
             "ptables": ptables,
+            # OpenMC samples the target's thermal motion for elastic
+            # scattering below free_gas_threshold * kT (default 400); a
+            # cutoff in eV (e.g. 4, this code's thermal cutoff) makes it
+            # scatter on targets at rest above, as the slowing-down march
+            **(
+                {}
+                if free_gas_cutoff is None
+                else {
+                    "free_gas_threshold": free_gas_cutoff
+                    / (
+                        BOLTZMANN_EV_PER_K
+                        * st.temperature(m.materials["fuel"].temperature)
+                    )
+                }
+            ),
+            # exact target motion in U-238's resonances: relative velocity
+            # sampling against the 0 K elastic cross section (OpenMC 'rvs')
+            **(
+                {
+                    "resonance_scattering": {
+                        "enable": True,
+                        "method": "rvs",
+                        "energy_min": 1.0,
+                        "energy_max": 1000.0,
+                        "nuclides": ["U238"],
+                    }
+                }
+                if resonance_scattering
+                else {}
+            ),
         },
     }
 
@@ -136,8 +180,15 @@ def _merge(rates: dict, keep_rings: bool) -> dict:
 def compare(r, result: dict) -> str:
     """Report: k, then capture and fission by nuclide, ring and energy band."""
     ours_raw = our_rates(r)
-    rings = any("/" in region for region, _, _ in ours_raw)
-    ref = _merge(reference_rates(result), rings)
+    ref_raw = reference_rates(result)
+
+    def fuel_labels(rates: dict) -> set[str]:
+        return {region for region, _, _ in rates if region.startswith("fuel")}
+
+    # ring by ring only if both have the same rings (OpenMC tallies 3)
+    split = any("/" in region for region, _, _ in ours_raw)
+    rings = split and fuel_labels(ours_raw) == fuel_labels(ref_raw)
+    ref = _merge(ref_raw, rings)
     ours = _merge(ours_raw, rings)
     k, k_std = result["k"], result["k_std"]
     lines = [
@@ -170,6 +221,16 @@ def compare(r, result: dict) -> str:
                     if rg.startswith("fuel") and nn == n and ss == s)  # fmt: skip
             cols.append(f"{lo:g}-{hi:g} eV: {a - b:+.5f}")
         lines.append(f"    {n} {s}: " + ", ".join(cols))
+    if len(result.get("pin_fission", [[0]])) > 1:
+        from .assembly import compare_pins, pin_powers
+
+        omc = np.asarray(result["pin_fission"])
+        ours_pins = pin_powers(r)
+        omc = np.where(np.isnan(ours_pins), np.nan, omc)
+        c = compare_pins(ours_pins, omc / np.nanmean(omc))
+        lines.append(f"  pin powers vs OpenMC: RMS {c.rms:.2f}%, max {c.max_abs:.2f}% "
+                     f"at {c.worst}; max {c.ours_max:.4f} ({c.ref_max:.4f}), "
+                     f"min {c.ours_min:.4f} ({c.ref_min:.4f})")  # fmt: skip
     return "\n".join(lines)
 
 
@@ -205,6 +266,11 @@ def main(argv: list[str] | None = None) -> None:
     w.add_argument("--particles", type=int, default=100_000)
     w.add_argument("--batches", type=int, default=250)
     w.add_argument("--tag", default="", help="suffix of the file names")
+    w.add_argument("--lattice", default=None, help="default: the model's only lattice")
+    w.add_argument("--free-gas-cutoff", type=float, default=None,
+                   help="eV: target at rest above (OpenMC default: 400 kT)")  # fmt: skip
+    w.add_argument("--resonance-scattering", action="store_true",
+                   help="exact U-238 resonance scattering kernel (OpenMC rvs)")  # fmt: skip
     c = sub.add_parser("compare", help="run this code and compare with OpenMC")
     c.add_argument("state")
     c.add_argument("--model", default="vera-p1")
@@ -212,23 +278,37 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--shielding", default="sd")
     c.add_argument("--rings", action="store_true", help="shield each pellet ring")
     c.add_argument("--sph", action="store_true", help="SPH factors")
+    c.add_argument("--clad", action="store_true", help="clad slows down with the rings")
+    c.add_argument("--moving", action="store_true",
+                  help="U-238 scatters on moving targets (sd)")  # fmt: skip
+    c.add_argument("--lattice", default=None)
+    c.add_argument("--azim", type=int, default=None, help="default: heterogeneous.AZIM")
+    c.add_argument("--spacing", type=float, default=None)
+    c.add_argument("--fuel-rings", type=int, default=None)
     args = ap.parse_args(argv)
     if args.command == "spec":
-        s = spec(args.state, args.model, all_nuclides=args.all_nuclides,
+        model = load_model(args.model)
+        s = spec(args.state, model, args.lattice or next(iter(model.lattices)),
+                 all_nuclides=args.all_nuclides,
                  particles=args.particles, batches=args.batches,
-                 ptables=not args.no_ptables)  # fmt: skip
+                 ptables=not args.no_ptables,
+                 free_gas_cutoff=args.free_gas_cutoff,
+                 resonance_scattering=args.resonance_scattering)  # fmt: skip
         out = args.out or RUNS / f"{args.state}{args.tag}.spec.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(s, indent=1))
         print(out)
     else:
-        from .heterogeneous import run
+        from .heterogeneous import AZIM, FUEL_RINGS, SPACING, run
 
         result = json.loads(
             (args.result or RUNS / f"{args.state}.result.json").read_text()
         )
-        r = run(args.state, args.shielding, args.model, ring_shielding=args.rings,
-                sph=args.sph)  # fmt: skip
+        model = load_model(args.model)
+        r = run(args.state, args.shielding, model, args.lattice or next(iter(model.lattices)),
+                args.azim or AZIM, args.spacing or SPACING,
+                fuel_rings=args.fuel_rings or FUEL_RINGS, ring_shielding=args.rings,
+                sph=args.sph, coupled_clad=args.clad, moving_targets=args.moving)  # fmt: skip
         print(compare(r, result))
 
 

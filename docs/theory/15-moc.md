@@ -83,11 +83,39 @@ The first term is the flux of an infinite medium with that source. The
 second term corrects it with what the tracks see: neutrons streaming in
 from elsewhere, or escaping.
 
-**Polar quadrature.** This code uses Gauss–Legendre points in
-$\mu = \cos\theta$ on $(0, 1)$. Production MOC codes often use the
-Tabuchi–Yamamoto set, which is optimized for the integrals that appear here
-and is more accurate with two or three angles. Gauss–Legendre is easy to
-derive and converges as the number of angles grows.
+**Polar quadrature.** Which polar integral does a segment need? A
+neutron at polar angle $\theta$ crosses the segment over $\ell/\sin\theta$,
+and its contribution to the region carries the weight $\sin\theta$. With
+$\mu = \cos\theta$ and $\mathrm{d}\mu = \sin\theta\,\mathrm{d}\theta$,
+
+$$
+\int_0^1 \sin\theta\; e^{-\tau/\sin\theta}\,\mathrm{d}\mu
+= \int_0^{\pi/2} \cos^2\vartheta\; e^{-\tau/\cos\vartheta}\,\mathrm{d}\vartheta
+= \mathrm{Ki}_3(\tau),
+$$
+
+which is the Bickley–Naylor function of collision probabilities (chapter 19,
+$\vartheta = \pi/2 - \theta$). A polar set should therefore reproduce
+$\mathrm{Ki}_3$ at every optical thickness. Gauss–Legendre points in $\mu$
+integrate polynomials exactly. But at $\tau = 0$ the integrand is
+$\sqrt{1-\mu^2}$, which has an infinite slope at $\mu = 1$, and for large
+$\tau$ it is concentrated at grazing angles. The **Tabuchi–Yamamoto** set
+was fitted to $\mathrm{Ki}_3$ instead. This code uses it by default (1–3
+angles, as tabulated in [[OpenMOC](#ref-openmoc)],
+`TYPolarQuad`). The largest error in $\mathrm{Ki}_3$ over
+$0 \le \tau \le 30$, computed against `cp.bickley`:
+
+| angles | 1 | 2 | 3 | 6 | 12 |
+| --- | --- | --- | --- | --- | --- |
+| Gauss–Legendre | 8.1×10⁻² | 1.1×10⁻² | 3.6×10⁻³ | 5.4×10⁻⁴ | 7.5×10⁻⁵ |
+| Tabuchi–Yamamoto | 1.3×10⁻² | 4.1×10⁻⁴ | 3.4×10⁻⁵ | | |
+
+Three Tabuchi–Yamamoto angles beat twelve Gauss–Legendre ones. For C5G7
+the difference hardly shows. The 172-group pin cell has optically thick
+resonance groups, and there 3 Gauss–Legendre angles were 300 pcm below the
+converged polar answer with infinitely dilute cross sections, and 60 pcm
+below it with shielded ones (chapter 19). Gauss–Legendre stays available (`quadrature="gauss-legendre"`)
+for any number of angles.
 
 **Boundaries.** A sweep's outgoing flux becomes, in the next iteration, the
 incoming flux of the sweep it is linked to (reflective sides). At a vacuum

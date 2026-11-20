@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from fission.model import load_model
-from fission.pincell.heterogeneous import run
+from fission.pincell.heterogeneous import AZIM, FUEL_RINGS, SPACING, run
 
 from . import condense, critical, homogenize, mode
 from .condense import THERMAL_CUT
@@ -32,6 +32,7 @@ def table(fg) -> str:
         ("nu Sigma_f (1/cm)", fg.nu_sigma_f),
         ("kappa Sigma_f (MeV/cm)", fg.kappa_sigma_f / 1e6),
         ("chi", fg.chi),
+        ("discontinuity factor", fg.adf),
         ("flux (relative)", fg.flux / fg.flux.sum()),
     ]
     lines = [
@@ -52,9 +53,18 @@ def main(argv: list[str] | None = None) -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)  # fmt: skip
     ap.add_argument("states", nargs="+")
     ap.add_argument("--model", default="vera-p1")
+    ap.add_argument("--lattice", default=None, help="default: the model's only lattice")
+    ap.add_argument("--azim", type=int, default=AZIM)
+    ap.add_argument("--spacing", type=float, default=SPACING)
+    ap.add_argument("--fuel-rings", type=int, default=FUEL_RINGS)
     ap.add_argument("--shielding", default="sd")
     ap.add_argument("--rings", action="store_true")
     ap.add_argument("--sph", action="store_true")
+    ap.add_argument(
+        "--clad", action="store_true", help="clad slows down with the rings"
+    )
+    ap.add_argument("--moving", action="store_true",
+                   help="U-238 scatters on moving targets (sd)")  # fmt: skip
     ap.add_argument("--spectrum", choices=["b1", "infinite"], default="b1")
     ap.add_argument("--cut", type=float, nargs="*", default=[THERMAL_CUT],
                     help="inner few-group boundaries (eV)")  # fmt: skip
@@ -62,7 +72,11 @@ def main(argv: list[str] | None = None) -> None:
     model = load_model(args.model)
     for state in args.states:
         t0 = time.perf_counter()
-        r = run(state, args.shielding, model, ring_shielding=args.rings, sph=args.sph)
+        lattice = args.lattice or next(iter(model.lattices))
+        r = run(state, args.shielding, model, lattice, args.azim, args.spacing,
+                fuel_rings=args.fuel_rings,
+                ring_shielding=args.rings, sph=args.sph,
+                coupled_clad=args.clad, moving_targets=args.moving)  # fmt: skip
         c = homogenize(r, f"{model.name} {state}")
         infinite = mode(c, 0.0)
         weight = critical(c) if args.spectrum == "b1" else infinite

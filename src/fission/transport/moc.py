@@ -40,7 +40,7 @@ per outer).
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -52,6 +52,14 @@ from .trace import Crossings, Segments, crossings, trace, track_areas
 from .tracks import TrackSet
 
 FOUR_PI = 4.0 * math.pi
+
+
+# (sin theta_p, omega_p) per number of angles in (0, pi/2), weights sum to 1
+TABUCHI_YAMAMOTO: dict[int, tuple[tuple[float, ...], tuple[float, ...]]] = {
+    1: ((0.798184,), (1.0,)),
+    2: ((0.363900, 0.899900), (0.212854, 0.787146)),
+    3: ((0.166648, 0.537707, 0.932954), (0.046233, 0.283619, 0.670148)),
+}
 
 
 @dataclass(frozen=True)
@@ -67,6 +75,28 @@ class Polar:
         x, w = np.polynomial.legendre.leggauss(n)
         mu = (x + 1) / 2
         return cls(np.sqrt(1 - mu * mu), w / 2)
+
+    @classmethod
+    def tabuchi_yamamoto(cls, n: int) -> Polar:
+        """The Tabuchi-Yamamoto set (1-3 angles): chosen so that
+        sum_p omega_p sin(theta_p) exp(-tau / sin(theta_p)) approximates the
+        Bickley function Ki3(tau) for every tau, the polar integral of a
+        segment (docs ch. 15). Values as tabulated in OpenMOC
+        (src/Quadrature.cpp, TYPolarQuad); 3 angles are as accurate for Ki3
+        as 12 Gauss-Legendre angles."""
+        if n not in TABUCHI_YAMAMOTO:
+            raise ValueError(f"Tabuchi-Yamamoto sets have 1-3 angles, not {n}")
+        sin, weight = TABUCHI_YAMAMOTO[n]
+        return cls(np.array(sin), np.array(weight))
+
+    @classmethod
+    def make(cls, n: int, quadrature: str = "tabuchi-yamamoto") -> Polar:
+        """``quadrature`` "tabuchi-yamamoto" (n <= 3) or "gauss-legendre"."""
+        if quadrature == "tabuchi-yamamoto":
+            return cls.tabuchi_yamamoto(n)
+        if quadrature == "gauss-legendre":
+            return cls.gauss(n)
+        raise ValueError(f"unknown polar quadrature {quadrature!r}")
 
 
 @dataclass
@@ -104,8 +134,12 @@ def tracking(
     n_polar: int = 3,
     use_rust: bool = True,
     faces: bool = True,
+    quadrature: str = "tabuchi-yamamoto",
 ) -> Problem:
     """Trace and area-correct the segments; no cross sections yet.
+
+    quadrature: polar set, "tabuchi-yamamoto" (1-3 angles, the default) or
+    "gauss-legendre" (any number).
 
     faces: also find where tracks cross the cell faces, so that sweeps can
     tally net currents (needed by CMFD). The result can drive fixed-source
@@ -117,7 +151,7 @@ def tracking(
     segments.length = segments.length * (areas / estimated)[segments.region]
     faces_crossed = crossings(geometry, tracks, segments) if faces else None
     return Problem(
-        geometry, tracks, segments, Polar.gauss(n_polar), areas,
+        geometry, tracks, segments, Polar.make(n_polar, quadrature), areas,
         np.zeros(geometry.regions, dtype=np.int64), [], faces_crossed,
     )  # fmt: skip
 
@@ -144,6 +178,7 @@ def build(
     use_rust: bool = True,
     faces: bool = True,
     xs: dict[str, MacroXS] | None = None,
+    quadrature: str = "tabuchi-yamamoto",
 ) -> Problem:
     """Trace, correct the segment lengths, and map regions to cross sections.
 
@@ -157,7 +192,9 @@ def build(
             if mat.macroscopic is None:
                 raise ValueError(f"material {name!r} has no macroscopic cross sections")
             xs[name] = model.multigroup[mat.macroscopic]
-    return with_materials(tracking(geometry, tracks, n_polar, use_rust, faces), xs)
+    return with_materials(
+        tracking(geometry, tracks, n_polar, use_rust, faces, quadrature), xs
+    )
 
 
 def fixed_source(
@@ -167,21 +204,35 @@ def fixed_source(
     tol: float = 1e-10,
     max_sweeps: int = 10000,
     use_rust: bool = True,
+    boundary: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float]:
     """Flux of a purely absorbing problem with a fixed source (no scattering).
 
     sigma_t, source: (regions, groups), source Q per steradian. Sweeps are
-    repeated until the boundary angular fluxes stop changing. Returns
+    repeated until the region tallies (scalar fluxes) stop changing. Returns
     (scalar flux, leakage).
+
+    boundary: the incoming angular fluxes (tracks, 2, polar, groups) to start
+    from, zero by default. When given, it is updated in place with the
+    converged ones, so that a sequence of similar problems (SPH iterations)
+    can start each solve where the last one ended.
     """
-    psi = np.zeros((len(problem.tracks), 2, len(problem.polar.sin), sigma_t.shape[1]))
+    shape = (len(problem.tracks), 2, len(problem.polar.sin), sigma_t.shape[1])
+    psi = np.zeros(shape) if boundary is None else boundary.copy()
     run = _rust_sweep if use_rust else sweep
+    problem = replace(problem, crossings=None)  # no face currents needed
+    last = None
     for _ in range(max_sweeps):
-        tally, new, leakage, _ = run(problem, sigma_t, source, psi)
-        change = np.max(np.abs(new - psi)) / max(float(np.max(np.abs(new))), 1e-300)
-        psi = new
-        if change < tol:
-            break
+        tally, psi, leakage, _ = run(problem, sigma_t, source, psi)
+        # converged when the region tallies (the scalar flux) stop changing:
+        # a small array, cheaper to test than every boundary angular flux
+        if last is not None:
+            scale = max(float(np.max(np.abs(tally))), 1e-300)
+            if np.max(np.abs(tally - last)) / scale < tol:
+                break
+        last = tally
+    if boundary is not None:
+        boundary[...] = psi
     flux = FOUR_PI * source / sigma_t + tally / (sigma_t * problem.areas[:, None])
     return flux, leakage
 
@@ -293,6 +344,7 @@ class Solution:
     coarse_iterations: list[int] = field(
         default_factory=list
     )  # CMFD outers per iteration
+    psi: np.ndarray | None = field(default=None, repr=False)  # incoming boundary fluxes
 
     def rates(self, name: str) -> np.ndarray:
         """Reaction rate per region (integrated over its area), summed over groups."""
@@ -393,7 +445,11 @@ def solve(
         else:
             tally, psi, leakage, currents = sweep(problem, sigma_t, source, psi)
         flux = FOUR_PI * source / sigma_t + tally / (sigma_t * areas[:, None])
-        if accelerate:
+        # The transport correction can make the within-group scattering of
+        # hydrogen negative, and then the early flat-flux iterations give
+        # cells of pure water (guide tubes) negative sources and fluxes.
+        # CMFD needs positive cell fluxes: plain power iterations until then.
+        if accelerate and np.all(cell_flux(problem, flux) > 0):
             assert currents is not None
             flux, psi, k_new, outer = cmfd_step(problem, flux, currents, psi, k, use_rust,
                                                 cmfd_state)  # fmt: skip
@@ -416,7 +472,53 @@ def solve(
                   f"in the source {err_s:.1e}")  # fmt: skip
         if converged:
             break
-    return Solution(problem, k, flux, it, leakage, history, coarse_iterations)
+    return Solution(problem, k, flux, it, leakage, history, coarse_iterations, psi)
+
+
+def surface_flux(problem: Problem, psi: np.ndarray) -> dict[str, np.ndarray]:
+    """Average scalar flux (per group) on each reflective side of the domain.
+
+    Every track starts and ends on the boundary, and psi holds the angular
+    flux entering there (psi[t, 0] at the start of track t, swept forward;
+    psi[t, 1] at its end, swept backward). A track of 2D direction d
+    crosses a side of normal n once per |d . n| / spacing of length, so
+
+        Int_side phi dl = sum over entering crossings of W psi / (sin theta |d . n|) * 2,
+
+    with W = 2 pi w_a omega_p delta_a sin theta_p the weights of the face
+    currents. The factor 2: on a reflective side the outgoing flux in each
+    direction equals the incoming flux in the mirrored one, so the
+    incoming half of the sphere carries half of phi.
+    """
+    t = problem.tracks
+    w = problem.weights() / problem.polar.sin[None, :]  # (tracks, polar)
+    phi_dir = np.array([a.phi for a in t.angles])[t.angle]
+    eps = 1e-9 * max(t.width, t.height)
+    out = {}
+    for side, length in (("left", t.height), ("right", t.height),
+                         ("bottom", t.width), ("top", t.width)):  # fmt: skip
+        if t.boundary[side] != "reflective":
+            continue
+        total = np.zeros(psi.shape[-1])
+        for direction, (x, y) in enumerate(((t.x0, t.y0), (t.x1, t.y1))):
+            on = {
+                "left": x < eps, "right": x > t.width - eps,
+                "bottom": y < eps, "top": y > t.height - eps,
+            }[side]  # fmt: skip
+            cosine = np.abs(np.cos(phi_dir) if side in ("left", "right")
+                            else np.sin(phi_dir))  # fmt: skip
+            factor = (w[on] / cosine[on, None])[:, :, None]  # (n, polar, 1)
+            total += (factor * psi[on, direction]).sum(axis=(0, 1))
+        out[side] = 2.0 * total / length
+    return out
+
+
+def cell_flux(problem: Problem, flux: np.ndarray) -> np.ndarray:
+    """Area-integrated flux of every lattice cell, shape (cells, groups)."""
+    cell = problem.geometry.cell_of_regions()
+    out = np.zeros((len(problem.geometry.cells), flux.shape[1]))
+    np.add.at(out, cell, problem.areas[:, None] * flux)
+    return out
 
 
 def cmfd_step(

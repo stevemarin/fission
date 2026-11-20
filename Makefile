@@ -47,7 +47,7 @@ MAMBA_URL    := https://github.com/mamba-org/micromamba-releases/releases/downlo
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        tools njoy openmc tools-check clean-tools openmc-library openmc-pin fewgroup nodal-check model tracks moc pin data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
+        tools njoy openmc tools-check clean-tools openmc-library openmc-pin fewgroup nodal-check assembly model tracks moc pin data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -147,6 +147,9 @@ tracks:  ## cyclic tracks + ray tracing of a model lattice (MODEL=vera-p1 AZIM=6
 
 pin:  ## k-inf of the heterogeneous VERA pin cell, MOC (STATES="1A 1B" PIN_SHIELD=sd|cp|equivalence|none PIN_ARGS=--rings)
 	$(PY) -m fission.pincell.heterogeneous $(STATES) --shielding $(PIN_SHIELD) $(PIN_ARGS)
+
+assembly:  ## 17x17 VERA lattice with MOC: k and pin powers vs KENO (STATES=2A PIN_ARGS="--rings --sph --clad")
+	$(PY) -m fission.pincell.assembly $(STATES) --shielding $(PIN_SHIELD) $(PIN_ARGS)
 
 fewgroup:  ## two-group constants of the VERA pin (homogenize, B1, condense) for the nodal code (STATES=1A PIN_ARGS="--rings --sph")
 	$(PY) -m fission.fewgroup $(STATES) --shielding $(PIN_SHIELD) $(PIN_ARGS)

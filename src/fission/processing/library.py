@@ -26,7 +26,13 @@ from ..endf.distributions.sab import scattering_law
 from .cache import cached_doppler, code_fingerprint
 from .groupr import GroupLibrary, group_library, shape_table
 from .groups import XMAS_172, GroupStructure
-from .thermal import FreeGas, Tabulated, with_thermal
+from .thermal import (
+    LIGHT_FREE_GAS_TOP,
+    THERMAL_CUTOFF,
+    FreeGas,
+    Tabulated,
+    with_thermal,
+)
 from .weights import ThermalSlowingDownFission
 
 FORMAT_VERSION = 1
@@ -96,7 +102,10 @@ def cached_groups(
 
     thermal: elastic scattering below 4 eV from a free gas ("free-gas", the
     default), a thermal scattering law of the ENDF thermal sublibrary (e.g.
-    "HinH2O" for H1), or None for a target at rest.
+    "HinH2O" for H1, used up to the end of its data, 10 eV for water), or
+    None for a target at rest. A nuclide lighter than a neutron (H1) with a
+    thermal option scatters on a free gas above that, up to 1 keV
+    (`LIGHT_FREE_GAS_TOP`), as in OpenMC.
 
     flux_shape = (energies, F): weight w(E) F(E) instead of w(E) inside each
     group (self-shielding, e.g. a narrow-resonance flux); shape_name labels
@@ -140,12 +149,18 @@ def cached_groups(
         ev, table, groups, weight, nuclide=nuclide, temperature=temperature,
         lmax=lmax, flux_shape=flux_shape,
     )  # fmt: skip
-    if thermal == "free-gas":
-        model: FreeGas | Tabulated = FreeGas(ev.header.awr, temperature)
-        gl = with_thermal(gl, model, weight, (table.energies, table.xs[2]))
-    elif thermal:
+    light = ev.header.awr < 1.0  # H-1: moving targets above the thermal range too
+    if thermal == "free-gas" or (thermal and light):
+        top = LIGHT_FREE_GAS_TOP if light else THERMAL_CUTOFF
+        gas = FreeGas(ev.header.awr, temperature)
+        gl = with_thermal(gl, gas, weight, (table.energies, table.xs[2]), cutoff=top)
+    if thermal and thermal != "free-gas":
+        # the law up to the end of its data (10 eV for water), above it the
+        # free gas of a light nuclide, or a target at rest
         law = scattering_law(Evaluation.from_file(lib.thermal(thermal)), temperature)
-        gl = with_thermal(gl, Tabulated(law), weight, flux_shape=flux_shape)
+        gl = with_thermal(
+            gl, Tabulated(law), weight, flux_shape=flux_shape, cutoff=law.emax
+        )
     directory.mkdir(parents=True, exist_ok=True)
     save_library(path, gl, {**meta, "key": key})
     # every thermal variant of this nuclide/temperature/structure: only entries

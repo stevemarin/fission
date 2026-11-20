@@ -301,7 +301,7 @@ def _lattice(
     geometry = t.string("geometry", "square")
     _reserved(t.at("geometry"), geometry, ("square",))
     if t.has("material"):
-        for key in ("pitch", "legend", "map"):
+        for key in ("pitch", "legend", "map", "gap"):
             if t.has(key):
                 _fail(
                     t.at(key),
@@ -313,6 +313,9 @@ def _lattice(
         t.finish()
         return Lattice(name, "square", material=material)
     pitch = t.number("pitch")
+    gap = t.number("gap", 0.0, minimum=None)
+    if gap < 0:
+        _fail(t.at("gap"), f"must be >= 0, got {gap:g}")
     if t.has("fill"):
         for key in ("legend", "map"):
             if t.has(key):
@@ -338,7 +341,9 @@ def _lattice(
     if len(grid) != len(grid[0]):
         _fail(t.at("map"), f"must be square, got {len(grid)} rows of {len(grid[0])}")
     t.finish()
-    return Lattice(name, "square", pitch, cast(tuple[tuple[str, ...], ...], grid))
+    return Lattice(
+        name, "square", pitch, cast(tuple[tuple[str, ...], ...], grid), gap=gap
+    )
 
 
 def _assembly(name: str, t: _Table, lattices: dict[str, Lattice]) -> Assembly:

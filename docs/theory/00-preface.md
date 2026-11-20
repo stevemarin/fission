@@ -33,7 +33,8 @@ nuclei), then Doppler-broadened to the temperatures of a reactor. The
 unresolved resonance range, self-shielding and thermal scattering come next;
 chapter 16 treats self-shielding in a pin cell, chapter 17 checks it against
 continuous-energy Monte Carlo and corrects it, chapter 18 condenses it into
-two-group constants for a nodal code, and chapter 19 previews the rest.
+two-group constants for a nodal code, chapter 19 moves on to the 17×17
+assembly, and chapter 20 previews the rest.
 
 ## How to read these notes {.unnumbered}
 
@@ -60,7 +61,10 @@ two-group constants for a nodal code, and chapter 19 previews the rest.
   from method, and fixes the two largest method errors it finds
   (superhomogenization and spatially dependent shielding). Chapter 18
   homogenizes the cell, corrects its spectrum for leakage (B1) and condenses
-  it to the two-group constants a nodal diffusion code reads.
+  it to the two-group constants a nodal diffusion code reads. Chapter 19
+  checks MOC with a second method (collision probabilities), adds the clad
+  to the slowing-down calculation, and solves a whole 17×17 assembly with
+  its pin powers and discontinuity factors.
 * Sections marked **(derivation)** can be skipped on a first reading; the
   results they derive are stated before them.
 

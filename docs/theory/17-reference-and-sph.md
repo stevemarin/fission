@@ -238,7 +238,9 @@ Doppler steps are still 8–12% stronger than OpenMC's. The cause is in the
 same place: at 1D the excess capture sits in the same scattering
 resonances, and it is larger (+5–9% at 36.7 eV against +2–5% at 1A).
 Against KENO, the Doppler steps look better than they are, because the two
-data libraries' Doppler steps differ by up to 86 pcm.
+data libraries' Doppler steps differ by up to 86 pcm. Chapter 19 finds the cause:
+OpenMC's default scattering kinematics. Against OpenMC with the exact
+free-gas kernel, the steps are 5% too *weak*.
 
 ## What remains
 
@@ -252,10 +254,9 @@ candidates:
   resonance energy, where the clad flux is itself depressed by the fuel
   next to it. The source returning to the pellet is overstated. Halving
   the clad's $\Sigma_p$ in the fuel's escape model, a crude stand-in for
-  that dip, raises 1A by 60 pcm. Treating the clad properly needs fuel,
-  gap and clad in one pointwise slowing-down calculation with a
-  collision-probability matrix at every energy, the method of the CP
-  cross-check (C4).
+  that dip, raises 1A by 60 pcm. Treating the clad properly needs the
+  fuel and the clad in one pointwise slowing-down calculation. Chapter 19
+  does it and gains 85–115 pcm.
 * **Scattering kinematics at temperature.** The march scatters on targets
   at rest. Below 400 kT (19.5 eV at 565 K, 41 eV at 1200 K), OpenMC
   samples the motion of the target nucleus. Above that energy it, too,
