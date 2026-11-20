@@ -205,8 +205,9 @@ water. The prime suspect is the outflow transport correction for
 hydrogen's strongly forward-peaked scattering (chapter 16).
 
 **Through the nodal code.** `make nodal-check` runs the nodal diffusion code
-of branch `claude-nodal`, unchanged, on the 1A constants (in the tools
-environment, which has its scipy dependency):
+of the earlier branch `claude-nodal`, unchanged, on the 1A constants (in the
+tools environment, which has its scipy dependency). The branch has since been
+deleted; the check runs on a local copy of its code and is kept as a record:
 
 * an all-reflective core gives $k = 1.183641$: the two-group $k_\infty$;
 * with $D_g B^2$ added to the absorption, $k = 1.000000$: the critical

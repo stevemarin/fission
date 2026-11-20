@@ -4,8 +4,9 @@ A lattice-physics code written from scratch as a **learning project**: raw
 ENDF/B-VIII.1 → pointwise cross sections → 2D pin-cell transport (MOC, later
 CP) → few-group constants → 3D nodal diffusion. No NJOY/OpenMC in the
 pipeline (they are installed under tools/ for independent checks: `make tools`). Python package:
-`fission`. An earlier NEM/CMFD nodal diffusion code lives on branch
-`claude-nodal`.
+`fission`. An earlier NEM/CMFD nodal diffusion code lived on branch
+`claude-nodal` (deleted by the user; the only copy left is the gitignored
+extract in `endf-data/nodal-src`, used by `make nodal-check`).
 
 ## Working rules
 
@@ -35,7 +36,9 @@ make pincell CASES=1A SHIELD=nr   # k-inf of the homogenized VERA 1 cell (none|n
 make pin STATES="1A 1B" PIN_SHIELD=sd PIN_ARGS="--rings --sph --clad --cp"  # heterogeneous VERA pin, MOC (+ CP cross-check; ~3.5 min/state at the converged defaults, PIN_ARGS+="--azim 64 --fuel-rings 3" for a quick look)
 make assembly STATES=2A PIN_ARGS="--rings --sph --clad"  # VERA 17x17 lattice: k + pin powers vs KENO (~11 min/state)
 make fewgroup STATES=1A PIN_ARGS="--rings --sph"  # 2-group constants (homogenize, B1, condense) -> endf-data/fewgroup/
-make nodal-check STATE=1A  # run branch claude-nodal (git archive, tools env) on those constants
+make branches BRANCHES=vera  # state matrix (M2): constants at every branch point -> endf-data/branches/ (~76 min infinite; BRANCH_ARGS="--solver moc --rings --sph --clad")
+make xs-tables BRANCHES=vera  # M3: table for the nodal code (endf-data/tables/) + tests: leave-one-out, PRESS-selected fit, check points (make branches BRANCH_ARGS="--check 10")
+make nodal-check STATE=1A  # old nodal code (endf-data/nodal-src copy, tools env) on those constants
 make openmc-library  # NJOY -> OpenMC HDF5 of our ENDF files (endf-data/openmc/, ~10 min; check only)
 make openmc-pin STATES=1A PIN_ARGS="--rings --sph"  # OpenMC CE reference of the pin vs this code (~15 min/state)
 make model MODEL=vera-p1 STATE=1A  # check a model file, print number densities
@@ -132,6 +135,21 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   kept outside fission/endf so the table cache stays valid). CLI
   `python -m fission.fewgroup`. `reference.few_group_reference` condenses
   OpenMC tallies.
+- `src/fission/branches/` (M2): `[branches.<name>]` in the model file
+  (`model.spec.Branches`: base state + values per axis of `BRANCH_AXES`;
+  points = tensor product, C order, names `<name>-i-j-k-l`; loader checks
+  increasing values containing the base value). `run_matrix` (solver
+  infinite | moc, B1 + condense per point, table rewritten after each point
+  and resumed if settings match, shaped libraries of a point deleted
+  after it), `Table.array(key)` (grid-shaped), `coefficients` (d rho/dx at
+  the base). `fewgroup.homogenize.from_mixture` = constants of the infinite
+  medium (chi weighted by nuclide production; keeps k to 1e-15).
+- `src/fission/tables/` (M3): `multilinear` (axis by axis, end segment
+  extrapolates, single-node axis constant), `XSTable` (from a branch Table,
+  fuel axis in sqrt(T) via `TRANSFORMS`, `without(axis, i)` for leave one
+  out, JSON write/read), `select` (greedy terms by PRESS e/(1-h), fewest
+  within 1% of best, one term set for all constants), `fit`, `k_infinity`.
+  `branches.sample_states` / `run_states` = off-grid check points.
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -158,7 +176,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `21-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `22-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -214,7 +232,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1), C4 CP + clad + 17x17 assembly; theory docs ch. 0–21. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1), C4 CP + clad + 17x17 assembly; M2 state matrix, M3 tables; theory docs ch. 0–22. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -288,15 +306,24 @@ self-shielding (C1).
     tallies, drops face currents, takes `boundary=` (SPH warm start).
     1A-1D vs OpenMC default -62/-92/-85/-164; 1B/1D vs at-rest -89/-23, all
     rates within 1e-4 per fission neutron. C5G7 +12 pcm.
-  - Next: the march with moving H, the assembly at converged tracking, or
-    the M track (M2 state-matrix driver)
+  - Next: M4 (needs a new nodal code), the MOC state matrix (~3 h), the
+    march with moving H, or the assembly at converged tracking
 - **M: model building** (describe the reactor once, as data; generate every calculation from it)
   - M1 declarative model file: TOML layers + states, number densities, homogenization (done)
-  - M2 state-matrix driver: lattice calculation at every branch point
-    (fuel T, moderator density/T, boron), first with the infinite-medium
-    solver, later MOC
-  - M3 cross-section tables for the nodal code: multilinear interpolation,
-    ADFs from C3; then a fitted/sparse parametrization compared with it
-  - M4 core model -> nodal input (core map + tables), code on `claude-nodal`
+  - M2 state-matrix driver (done, ch. 20): `make branches`; VERA matrix
+    `[branches.vera]` around 1B, 4 x 2 x 2 x 3 = 48 points, infinite solver
+    ~90 s/point (shaped libraries). Coefficients at 1B: fuel T -3.96 pcm/K,
+    moderator T -1.73 pcm/K, density +22.5 pcm per 0.01 g/cm3, boron
+    -5.94 pcm/ppm; density effect +1092 / +185 / -293 pcm at 0 / 1300 /
+    2000 ppm. Homogeneous Doppler 1B->1D -2201 vs KENO -1422 (no spatial
+    shielding). MOC run of the matrix (~3 h) not done yet.
+  - M3 cross-section tables (done, ch. 20): multilinear in sqrt(Tf) (LOO
+    at 900 K: 13 pcm vs 94 in T; upscatter wants T), PRESS-selected
+    polynomial (13 terms: rho, Tf, B, Tm, rho B, ...). 10 check points:
+    multilinear sqrt(T) max +29 pcm (boron curvature 0-1300 ppm), T +57,
+    fit +4 pcm; constants within 0.35%. ADFs interpolated like XS (1 for
+    the infinite medium).
+  - M4 core model -> nodal input (core map + tables); the nodal code must be
+    rewritten here (branch `claude-nodal` deleted)
   - Later: hex geometry, eighth symmetry, burnup histories (with depletion)
 - Deferred: unresolved-range probability tables, depletion.

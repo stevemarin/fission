@@ -16,6 +16,7 @@ temperature and, for the coolant, its density come from the state.
 
 from __future__ import annotations
 
+import itertools
 import math
 from dataclasses import dataclass, field
 from typing import Literal
@@ -168,6 +169,45 @@ class State:
         return self.fuel_temperature if which == "fuel" else self.moderator_temperature
 
 
+# The state variables a branch can change, in the order of the table axes.
+BRANCH_AXES = (
+    "fuel_temperature",
+    "moderator_temperature",
+    "moderator_density",
+    "boron_ppm",
+)
+
+
+@dataclass(frozen=True)
+class Branches:
+    """A state matrix: the lattice calculation is repeated at every point of
+    the tensor product of the axes, so that a nodal code can interpolate its
+    constants in the local conditions (M2, docs chapter 20).
+
+    axes holds a tuple for every name of BRANCH_AXES; an axis the file does
+    not list has the base state's value alone."""
+
+    name: str
+    base: str  # the state the matrix is built around
+    lattice: str | None  # None: the model's only lattice
+    axes: dict[str, tuple[float, ...]]
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return tuple(len(self.axes[a]) for a in BRANCH_AXES)
+
+    def states(self) -> list[State]:
+        """Every point as a State, in C order of the axes (boron fastest)."""
+        out = []
+        for index in itertools.product(*(range(n) for n in self.shape)):
+            fuel, mod_t, mod_rho, ppm = (
+                self.axes[a][i] for a, i in zip(BRANCH_AXES, index, strict=True)
+            )
+            label = "-".join(str(i) for i in index)
+            out.append(State(f"{self.name}-{label}", fuel, mod_t, mod_rho, ppm))
+        return out
+
+
 @dataclass(frozen=True)
 class Model:
     name: str
@@ -179,3 +219,4 @@ class Model:
     core: Core | None
     states: dict[str, State]
     multigroup: dict[str, MacroXS] = field(default_factory=dict)  # macroscopic data
+    branches: dict[str, Branches] = field(default_factory=dict)  # state matrices

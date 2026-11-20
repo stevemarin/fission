@@ -115,3 +115,40 @@ def homogenize(result, name: str = "cell") -> FineConstants:
         name, groups, flux_total / volume, per["total"], scatter, per["nu"],
         per["fission"], per["kappa"], chi / production, surface,
     )  # fmt: skip
+
+
+def from_mixture(solution, name: str = "cell") -> FineConstants:
+    """Constants of an infinite homogeneous medium (``pincell.infinite``).
+
+    The mixture is already homogeneous, so its constants are its own
+    macroscopic data; there is no flux-volume weighting to do. Only chi
+    needs a weight: each fissile nuclide has its own spectrum chi_i, and the
+    medium's chi = sum_i chi_i P_i / sum_i P_i with P_i = (nu Sigma_f,i . phi)
+    its fission production. With the converged flux this keeps the fission
+    source, F phi = sum_i chi_i P_i = chi sum_i P_i, so the eigenvalue of the
+    constants is the solver's k-infinity. No surface flux: the medium has no
+    surfaces (discontinuity factors 1)."""
+    m, phi = solution.mixture, solution.flux
+    groups = m.groups
+    upper, lower = np.asarray(groups.boundaries[:-1]), np.asarray(groups.boundaries[1:])
+    midpoint = np.sqrt(upper * lower)
+    size = groups.size
+    scatter = np.zeros((2, size, size))
+    kappa = np.zeros(size)
+    chi = np.zeros(size)
+    production = 0.0
+    for c, lib in zip(m.components, m.libraries, strict=True):
+        s = lib.scatter
+        for order in range(min(2, s.shape[0])):
+            scatter[order] += c.density * s[order]
+        if 18 in lib.sigma:
+            energy = np.array([recoverable_energy(c.nuclide)(e) for e in midpoint])
+            kappa += c.density * energy * lib.sigma[18]
+        if lib.nu_fission is not None and lib.chi is not None:
+            p = float(c.density * lib.nu_fission @ phi)
+            chi += lib.chi * p
+            production += p
+    return FineConstants(
+        name, groups, np.asarray(phi, dtype=float), m.total, scatter, m.nu_fission,
+        m.reaction(18), kappa, chi / production,
+    )  # fmt: skip

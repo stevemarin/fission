@@ -34,7 +34,8 @@ unresolved resonance range, self-shielding and thermal scattering come next;
 chapter 16 treats self-shielding in a pin cell, chapter 17 checks it against
 continuous-energy Monte Carlo and corrects it, chapter 18 condenses it into
 two-group constants for a nodal code, chapter 19 moves on to the 17×17
-assembly, and chapter 20 previews the rest.
+assembly, chapter 20 repeats the lattice calculation over the operating
+conditions of a core (the state matrix), and chapter 21 previews the rest.
 
 ## How to read these notes {.unnumbered}
 

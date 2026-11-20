@@ -114,3 +114,15 @@ moderator_temperature = 600.0
 moderator_density = 0.661
 boron_ppm = 1300
 reference = { keff = 1.162603, sigma = 0.000071, source = "Table P1-5: CE KENO-VI, ENDF/B-VII.0, heterogeneous cell" }
+
+# The state matrix (M2): the lattice calculation at every combination of
+# these values, the constants a nodal code interpolates in. All four states
+# above are grid points (1A = 565 K / 565 K / 0.743 / 1300 ppm; 1B-1D = fuel
+# 600 / 900 / 1200 K with 600 K water at 0.661). Moderator temperatures must
+# be temperatures of the H in H2O scattering law (every 5 K, 273-650 K).
+[branches.vera]
+base = "1B"
+fuel_temperature = [565.0, 600.0, 900.0, 1200.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+boron_ppm = [0.0, 1300.0, 2000.0]

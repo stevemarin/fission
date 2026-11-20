@@ -30,6 +30,8 @@ PIN_SHIELD   ?= sd
 PIN_ARGS     ?=
 OPENMC_TEMPS ?= 565 600 900 1200
 OPENMC_ARGS  ?=
+BRANCHES     ?= vera
+BRANCH_ARGS  ?=
 AZIM         ?= 64
 SPACING      ?= 0.05
 
@@ -47,7 +49,7 @@ MAMBA_URL    := https://github.com/mamba-org/micromamba-releases/releases/downlo
 
 .DEFAULT_GOAL := help
 .PHONY: help sync test test-slow test-rust test-fast lint format format-check typecheck check fix \
-        tools njoy openmc tools-check clean-tools openmc-library openmc-pin fewgroup nodal-check assembly model tracks moc pin data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
+        tools njoy openmc tools-check clean-tools openmc-library openmc-pin fewgroup branches xs-tables nodal-check assembly model tracks moc pin data tables doppler-tables groups pincell clean-tables show scan rm doppler secondary library docs figures clean
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -154,9 +156,14 @@ assembly:  ## 17x17 VERA lattice with MOC: k and pin powers vs KENO (STATES=2A P
 fewgroup:  ## two-group constants of the VERA pin (homogenize, B1, condense) for the nodal code (STATES=1A PIN_ARGS="--rings --sph")
 	$(PY) -m fission.fewgroup $(STATES) --shielding $(PIN_SHIELD) $(PIN_ARGS)
 
-nodal-check:  ## run branch claude-nodal on the two-group constants of `make fewgroup` (STATE=1A; tools env)
-	@rm -rf endf-data/nodal-src && mkdir -p endf-data/nodal-src
-	git archive claude-nodal | tar -x -C endf-data/nodal-src
+branches:  ## state matrix (M2): few-group constants at every branch point (BRANCHES=vera MODEL=vera-p1 BRANCH_ARGS="--solver moc --rings --sph --clad")
+	$(PY) -m fission.branches $(BRANCHES) --model $(MODEL) $(BRANCH_ARGS)
+
+xs-tables:  ## cross-section tables (M3) from `make branches`: interpolation + fitted polynomial, tested (BRANCHES=vera; BRANCH_ARGS="--check 10" adds test points)
+	$(PY) -m fission.tables $(BRANCHES) --model $(MODEL)
+
+nodal-check:  ## run the old nodal code (copy in endf-data/nodal-src; branch claude-nodal is deleted) on `make fewgroup` constants (STATE=1A; tools env)
+	@test -d endf-data/nodal-src/src || { echo "endf-data/nodal-src is missing: the nodal code (former branch claude-nodal) is gone"; exit 1; }
 	PYTHONPATH=endf-data/nodal-src/src $(IN_TOOLS) python checks/nodal_fewgroup.py endf-data/fewgroup/$(MODEL)-$(STATE).json
 
 openmc-library:  ## NJOY -> OpenMC HDF5 library of our ENDF files (OPENMC_TEMPS="565 600 900 1200"; check only)

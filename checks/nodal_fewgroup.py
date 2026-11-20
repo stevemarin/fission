@@ -1,9 +1,10 @@
-"""Feed the C3 two-group constants to the nodal code of branch claude-nodal.
+"""Feed the C3 two-group constants to the old nodal code (formerly branch claude-nodal).
 
     make nodal-check STATE=1A
 
 Runs in the tools environment (the nodal code needs scipy, which OpenMC's
-environment already has) on a copy of the branch extracted by `git archive`.
+environment already has) on the copy in endf-data/nodal-src (the branch
+claude-nodal is deleted; that gitignored extract is the only copy left).
 Three checks: an all-reflective core reproduces the few-group k-infinity; the
 same with D B^2 added to the absorption gives k = 1 at the critical buckling;
 a bare square core whose geometric buckling is B^2 shows the effect of the

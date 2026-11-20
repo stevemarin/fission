@@ -59,7 +59,8 @@ class FewGroup:
         return float(self.nu_sigma_f @ np.linalg.solve(a, self.chi))
 
     def material(self) -> dict:
-        """Keyword arguments of ``nodal.Material`` (branch claude-nodal)."""
+        """Keyword arguments of ``nodal.Material`` (the old nodal code, formerly
+        branch claude-nodal)."""
         return {
             "name": self.name,
             "D": self.D.tolist(),

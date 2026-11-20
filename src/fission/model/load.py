@@ -22,9 +22,11 @@ from typing import Any, NoReturn, cast
 from .materials import element_of
 from .multigroup import LibraryError, MacroXS, load_multigroup
 from .spec import (
+    BRANCH_AXES,
     SIDES,
     Assembly,
     AxialSegment,
+    Branches,
     Core,
     Isotopics,
     Lattice,
@@ -419,6 +421,46 @@ def _state(name: str, t: _Table) -> State:
     return state
 
 
+def _branches(
+    name: str, t: _Table, states: dict[str, State], lattices: dict[str, Lattice]
+) -> Branches:
+    base_name = t.string("base")
+    if base_name not in states:
+        _fail(t.at("base"), f"unknown state {base_name!r} (have {', '.join(states)})")
+    base = states[base_name]
+    lattice = t.string("lattice", None)
+    if lattice is not None and lattice not in lattices:
+        _fail(t.at("lattice"), f"unknown lattice {lattice!r}")
+    axes: dict[str, tuple[float, ...]] = {}
+    for axis in BRANCH_AXES:
+        if not t.has(axis):
+            axes[axis] = (getattr(base, axis),)
+            continue
+        values = t.raw(axis)
+        if not isinstance(values, list) or not values:
+            _fail(
+                t.at(axis), f"expected a non-empty list of numbers, got {_kind(values)}"
+            )
+        for v in values:
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                _fail(t.at(axis), f"expected numbers, got {_kind(v)}")
+        lowest = 0.0 if axis == "boron_ppm" else 1e-300
+        if min(values) < lowest:
+            _fail(
+                t.at(axis), "values must be positive" + (" or 0" if lowest == 0 else "")
+            )
+        if any(b <= a for a, b in itertools.pairwise(values)):
+            _fail(t.at(axis), "values must increase (they are interpolation nodes)")
+        axes[axis] = tuple(float(v) for v in values)
+        if not any(
+            abs(v - getattr(base, axis)) <= 1e-9 * max(1.0, abs(v)) for v in values
+        ):
+            _fail(t.at(axis), f"must contain the base state's value {getattr(base, axis):g}"
+                  " (the coefficients are taken around it)")  # fmt: skip
+    t.finish()
+    return Branches(name, base_name, lattice, axes)
+
+
 # ---------------------------------------------------------------- model
 def _section(top: _Table, key: str) -> _Table:
     return top.table(key, {}) if top.has(key) else _Table({}, key)
@@ -474,10 +516,13 @@ def parse(data: dict[str, Any], base: Path | None = None) -> Model:
             _fail(
                 f"materials.{mat.name}.density", '"moderator" needs at least one state'
             )
+    sec = _section(top, "branches")
+    branches = {k: _branches(k, sec.table(k), states, lattices) for k in sec.data}
     top.finish()
     return Model(
-        name, description, materials, pins, lattices, assemblies, core, states, library
-    )
+        name, description, materials, pins, lattices, assemblies, core, states, library,
+        branches,
+    )  # fmt: skip
 
 
 def load_model(path: str | Path) -> Model:

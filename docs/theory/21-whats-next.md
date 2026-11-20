@@ -12,9 +12,12 @@ checks that pin against continuous-energy Monte Carlo on the same data and
 corrects it (SPH factors, rings in the pellet), chapter 18 condenses it
 into two-group constants for a nodal code, and chapter 19 adds a second
 transport method (collision probabilities), the clad to the slowing-down
-calculation, and the 17×17 assembly. This chapter previews what remains.
+calculation, and the 17×17 assembly, and chapter 20 repeats the lattice
+calculation at every point of a state matrix and builds the tables a nodal
+code reads. This chapter previews what
+remains.
 
-## Beyond chapter 19
+## Beyond chapter 20
 
 * **The assembly at converged tracking.** The pin cell's defaults (256
   directions, 10 rings) are too expensive for 17×17. Rod-by-rod tracking
@@ -26,9 +29,14 @@ calculation, and the 17×17 assembly. This chapter previews what remains.
 * **Rod-by-rod shielding.** Every rod of the assembly shares one shielded
   library. Rods next to guide tubes and at the edge see more water. Their
   own Dancoff factors would refine the pin powers.
-* **Branches and tables.** The core needs constants at every fuel
-  temperature, water density and boron concentration (M2–M3), and they
-  must get to the nodal code (M4).
+* **The state matrix with MOC.** Chapter 20 ran the matrix with the
+  homogenized cell, whose Doppler feedback is 55% too strong. The same
+  matrix with the heterogeneous solver takes about three hours.
+* **The nodal code.** M4 builds the nodal input from the core map and the
+  tables of chapter 20. It needs a new nodal code: the old one (branch
+  `claude-nodal`) is gone. The table format is ready for it; a fitted
+  polynomial (4 pcm off the grid) or multilinear interpolation (29 pcm, a
+  third boron node would help) are both available.
 * **Depletion.** Ring-wise shielding matters most once plutonium builds up
   at the pellet rim.
 

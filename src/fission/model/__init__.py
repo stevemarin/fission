@@ -10,8 +10,10 @@ from .load import MODELS_DIR, ModelError, load_model, parse
 from .materials import atomic_mass, number_densities
 from .multigroup import MacroXS, load_multigroup
 from .spec import (
+    BRANCH_AXES,
     Assembly,
     AxialSegment,
+    Branches,
     Core,
     Isotopics,
     Lattice,
@@ -23,9 +25,11 @@ from .spec import (
 )
 
 __all__ = [
+    "BRANCH_AXES",
     "MODELS_DIR",
     "Assembly",
     "AxialSegment",
+    "Branches",
     "Component",
     "Core",
     "Isotopics",
