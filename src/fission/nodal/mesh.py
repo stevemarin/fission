@@ -10,6 +10,13 @@ towards them are external boundaries.
 With quarter symmetry the map's first row and column lie on the symmetry
 planes, through the middle of the centre assembly: those positions are half
 an assembly wide, and the two symmetry faces are reflective.
+
+Control rods: `banks` gives the steps withdrawn of some banks of the
+model's [core.banks]. At each position of such a bank the rod's absorber
+zones cut the stack, and inside a zone a lattice is replaced by its
+``rodded`` lattice for that absorber (a lattice without one, like the
+reflector above the fuel, stays as it is). The zone edges become axial
+node boundaries everywhere.
 """
 
 from __future__ import annotations
@@ -21,9 +28,10 @@ from pathlib import Path
 
 import numpy as np
 
-from fission.model import MacroXS, Model
+from fission.model import AxialSegment, MacroXS, Model
 
 FACES = ("west", "east", "north", "south", "bottom", "top")  # -x +x -y +y -z +z
+TOUCH = 1e-6  # cm: axial edges closer than this are one edge
 TABLES = Path("endf-data/tables")
 
 
@@ -71,14 +79,78 @@ def _split(width: float, count: int) -> list[float]:
     return [width / count] * count
 
 
+def rodded(
+    segments: tuple[AxialSegment, ...], model: Model, bottom: float,
+    zones: tuple[tuple[str, float], ...],
+) -> tuple[AxialSegment, ...]:  # fmt: skip
+    """The stack with a rod's absorber column inserted from `bottom` (cm):
+    segments cut at the zone edges, each piece inside a zone given its
+    lattice's rodded lattice for that absorber (if it has one)."""
+    edges = [bottom]
+    for _, height in zones:
+        edges.append(edges[-1] + height)
+    out: list[AxialSegment] = []
+    lo = 0.0
+    for seg in segments:
+        hi = lo + seg.height
+        cuts = sorted({lo, hi} | {e for e in edges if lo + TOUCH < e < hi - TOUCH})
+        for a, b in itertools.pairwise(cuts):
+            mid = 0.5 * (a + b)
+            lattice = seg.lattice
+            for k, (absorber, _) in enumerate(zones):
+                if edges[k] <= mid < edges[k + 1]:
+                    lattice = model.lattices[seg.lattice].rodded.get(absorber, lattice)
+            if out and out[-1].lattice == lattice:
+                out[-1] = AxialSegment(lattice, out[-1].height + (b - a))
+            else:
+                out.append(AxialSegment(lattice, b - a))
+        lo = hi
+    return tuple(out)
+
+
+def stacks(
+    model: Model, banks: dict[str, float] | None = None
+) -> dict[tuple[int, int], tuple[AxialSegment, ...]]:
+    """Axial stack of every map position, with the given banks inserted
+    (bank -> steps withdrawn)."""
+    core = model.core
+    assert core is not None
+    banks = banks or {}
+    if banks and core.banks is None:
+        raise ValueError(f"{model.name} has no control rod banks ([core.banks])")
+    rod = model.control_rods[core.banks.rod] if core.banks is not None else None
+    for bank, steps in banks.items():
+        assert core.banks is not None and rod is not None
+        if bank not in core.banks.positions:
+            raise ValueError(
+                f"no bank {bank!r} (have {', '.join(core.banks.positions)})"
+            )
+        if not 0 <= steps <= rod.steps:
+            raise ValueError(f"bank {bank}: {steps} steps, outside 0..{rod.steps}")
+    out = {}
+    for r, row in enumerate(core.map):
+        for c, a in enumerate(row):
+            if a is None:
+                continue
+            segments = model.assemblies[a].segments
+            here = core.banks.at(r, c) if core.banks is not None else None
+            if here is not None and here in banks and rod is not None:
+                bottom = rod.bottom + banks[here] * rod.step
+                segments = rodded(segments, model, bottom, rod.zones)
+            out[r, c] = segments
+    return out
+
+
 def core_mesh(
-    model: Model, refine: int = 1, axial_size: float | None = None
-) -> CoreMesh:
+    model: Model, refine: int = 1, axial_size: float | None = None,
+    banks: dict[str, float] | None = None,
+) -> CoreMesh:  # fmt: skip
     """Nodes of the model's core (macroscopic, homogeneous lattices only).
 
     refine: nodes per assembly width (a half assembly on a symmetry plane
     gets max(1, refine // 2)); axial_size: largest axial node (default: the
-    radial node size)."""
+    radial node size); banks: control rod banks inserted (bank -> steps
+    withdrawn), the others are out."""
     core = model.core
     if core is None:
         raise ValueError(f"{model.name} has no core")
@@ -99,13 +171,17 @@ def core_mesh(
 
     dx, col_of = widths(cols)
     dy, row_of = widths(rows)
-    used = {a for row in grid for a in row if a is not None}
-    if not used:
+    stack = stacks(model, banks)
+    if not stack:
         raise ValueError("the core map is empty")
-    breaks = sorted({0.0} | {
-        z for a in used
-        for z in np.cumsum([s.height for s in model.assemblies[a].segments])
-    })  # fmt: skip
+    breaks: list[float] = []
+    for z in sorted({0.0} | {
+        float(z) for segs in stack.values() for z in np.cumsum([s.height for s in segs])
+    }):  # fmt: skip
+        if (
+            not breaks or z - breaks[-1] > TOUCH
+        ):  # edges that coincide (rod top = fuel top)
+            breaks.append(z)
     size = axial_size or pitch / refine
     dz: list[float] = []
     for lo, hi in itertools.pairwise(breaks):
@@ -113,8 +189,7 @@ def core_mesh(
     z_mid = np.cumsum(dz) - np.array(dz) / 2
 
     names = sorted({
-        model.lattices[s.lattice].material or "" for a in used
-        for s in model.assemblies[a].segments
+        model.lattices[s.lattice].material or "" for segs in stack.values() for s in segs
     })  # fmt: skip
     # a table material may be listed by several lattices; nodes keep the name
     if "" in names:
@@ -149,12 +224,12 @@ def core_mesh(
     for j, r in enumerate(row_of):
         for i, c in enumerate(col_of):
             position[j, i] = (r, c)
-            a = grid[r][c]
-            if a is None:
+            if grid[r][c] is None:
                 continue
-            tops = np.cumsum([s.height for s in model.assemblies[a].segments])
+            segs = stack[r, c]
+            tops = np.cumsum([s.height for s in segs])
             for k, z in enumerate(z_mid):
-                seg = model.assemblies[a].segments[int(np.searchsorted(tops, z))]
+                seg = segs[min(int(np.searchsorted(tops, z)), len(segs) - 1)]
                 material[k, j, i] = index[model.lattices[seg.lattice].material or ""]
 
     b = core.boundary
@@ -190,3 +265,12 @@ def with_states(mesh: CoreMesh, states: dict[str, np.ndarray]) -> CoreMesh:
         material[k, j, i] = len(xs)
         xs.append(table.macro(state, mesh.names[m]))  # type: ignore[attr-defined]
     return replace(mesh, xs=xs, material=material)
+
+
+def parse_banks(items: list[str] | None) -> dict[str, float]:
+    """Command-line bank positions, "D=0" (steps withdrawn) or "D" (fully in)."""
+    out = {}
+    for item in items or []:
+        bank, _, steps = item.partition("=")
+        out[bank] = float(steps) if steps else 0.0
+    return out

@@ -9,13 +9,31 @@
 # The state matrix (M2) is the one a core at 1300 ppm needs (chapter 22).
 
 [model]
-extends = "vera-p2"
+extends = "vera-p2-rods"   # vera-p2 + Pyrex patterns (Figure 5) + control rods
 name = "WBN1 assembly, 2.11%"
 
 [materials.fuel]
 weight_percent.U = { U234 = 0.01736, U235 = 2.11, U236 = 0.00971, U238 = 97.86293 }
 
 [branches.core]
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+# control rods: every guide tube rodded (an RCCA position of Figure 10).
+# The hybrid rod is Ag-In-Cd in its lower 101.6 cm and B4C above (Table 8),
+# so a rodded assembly needs both lattices.
+
+[branches.aic]
+lattice = "aic_24"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+[branches.b4c]
+lattice = "b4c_24"
 base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]

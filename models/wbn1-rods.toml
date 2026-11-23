@@ -1,0 +1,92 @@
+# Watts Bar Unit 1 cycle 1 with its control rods: wbn1-pyrex.toml plus the
+# eight RCCA banks of VERA Figure 10, for the zero-power bank worths of the
+# start-up tests (VERA problem 5).
+#
+# Source: CASL-U-2012-0131-004 Rev. 4 (free:
+# https://corephysics.com/docs/CASL-U-2012-0131-004.pdf)
+#   Section 1.6, Table 8  hybrid RCCA: Ag-In-Cd in the lower 101.6 cm, B4C in
+#               the upper 259.08 cm; fully inserted the poison starts at
+#               17.031 cm, 5.08 cm above the bottom of the fuel (11.951 cm,
+#               Table 4); 1.5875 cm per step, 230 steps
+#   Figure 10   bank positions (quarter core). A rodded assembly has a
+#               rodlet in all 24 guide tubes and no Pyrex; every position
+#               below is a Pyrex-free assembly of Figure 9.
+#   Table P5-7  measured bank worths and CE KENO-VI predictions (zero power,
+#               565 K, dilution end point 1170 ppm; this model stays at the
+#               tables' 1300 ppm, a secondary effect per note 3)
+# Banks SC and SD are not octant symmetric: the real core repeats them by
+# rotation, this quarter-core model by reflection. Each reflected position
+# is octant-equivalent to a rotated one, so the bank's rods sit at
+# equivalent places, but the pair interactions are not exactly the same.
+#
+# Axial coordinate of the stacks: 21.5 cm of reflector, then the fuel, so
+# the fully inserted poison starts at 21.5 + 5.08 = 26.58 cm and its top
+# (26.58 + 360.68) meets the top of the fuel. At 230 steps the Ag-In-Cd
+# tip is in the upper reflector, which has no rodded lattice: rods out.
+
+[model]
+extends = "wbn1-pyrex"
+name = "WBN1 cycle 1 with control rods"
+
+[materials.fuel_211_aic]
+temperature = "fuel"
+table = "wbn1-fuel-211-aic-moc"
+[materials.fuel_211_b4c]
+temperature = "fuel"
+table = "wbn1-fuel-211-b4c-moc"
+[materials.fuel_262_aic]
+temperature = "fuel"
+table = "wbn1-fuel-262-aic-moc"
+[materials.fuel_262_b4c]
+temperature = "fuel"
+table = "wbn1-fuel-262-b4c-moc"
+[materials.fuel_310_aic]
+temperature = "fuel"
+table = "wbn1-fuel-310-aic-moc"
+[materials.fuel_310_b4c]
+temperature = "fuel"
+table = "wbn1-fuel-310-b4c-moc"
+
+[lattices.fuel_211_aic]
+material = "fuel_211_aic"
+[lattices.fuel_211_b4c]
+material = "fuel_211_b4c"
+[lattices.fuel_262_aic]
+material = "fuel_262_aic"
+[lattices.fuel_262_b4c]
+material = "fuel_262_b4c"
+[lattices.fuel_310_aic]
+material = "fuel_310_aic"
+[lattices.fuel_310_b4c]
+material = "fuel_310_b4c"
+
+# where an absorber zone reaches the fuel of an RCCA position
+[lattices.fuel_211]
+rodded = { aic = "fuel_211_aic", b4c = "fuel_211_b4c" }
+[lattices.fuel_262]
+rodded = { aic = "fuel_262_aic", b4c = "fuel_262_b4c" }
+[lattices.fuel_310]
+rodded = { aic = "fuel_310_aic", b4c = "fuel_310_b4c" }
+
+[control_rods.rcca]                 # Table 8
+bottom = 26.58                      # cm, fully inserted
+step = 1.5875
+steps = 230
+zones = [{ absorber = "aic", height = 101.6 }, { absorber = "b4c", height = 259.08 }]
+
+[core.banks]                        # Figure 10, on the map of Figure 9
+rod = "rcca"
+map = """
+D  .  A  .  D  .  C  .  .
+.  .  .  .  .  SB .  .  .
+A  .  C  .  .  .  B  .  .
+.  .  .  A  .  SC .  .  .
+D  .  .  .  D  .  SA .  .
+.  SB .  SD .  .  .  .  .
+C  .  B  .  SA .  .  .  .
+.  .  .  .  .  .  .  .  .
+.  .  .  .  .  .  .  .  .
+"""
+source = "VERA Table P5-7"
+measured = { A = 843, B = 879, C = 951, D = 1342, SA = 435, SB = 1056, SC = 480, SD = 480 }
+reference = { A = 898, B = 875, C = 984, D = 1386, SA = 447, SB = 1066, SC = 499, SD = 499 }

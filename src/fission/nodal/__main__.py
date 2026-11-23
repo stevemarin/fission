@@ -18,7 +18,7 @@ import numpy as np
 from fission.model import load_model
 
 from . import diffusion, nem
-from .mesh import CoreMesh, core_mesh
+from .mesh import CoreMesh, core_mesh, parse_banks
 
 
 def assembly_powers(mesh: CoreMesh, flux: np.ndarray) -> np.ndarray:
@@ -54,9 +54,11 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--method", choices=["nem", "fd"], default="nem")
     ap.add_argument("--refine", type=int, default=1, help="nodes per assembly width")
     ap.add_argument("--axial", type=float, default=None, help="largest axial node (cm)")
+    ap.add_argument("--bank", action="append", metavar="NAME[=STEPS]",
+                    help="insert a control rod bank (steps withdrawn, default 0 = fully in)")  # fmt: skip
     args = ap.parse_args(argv)
     model = load_model(args.model)
-    mesh = core_mesh(model, args.refine, args.axial)
+    mesh = core_mesh(model, args.refine, args.axial, parse_banks(args.bank))
     t0 = time.perf_counter()
     if args.method == "nem":
         r = nem.solve(mesh)

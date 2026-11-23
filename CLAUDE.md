@@ -181,7 +181,12 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   D = 1/(3 Sigma_tr). `branches` validates MOC points (`_valid`: finite k,
   positive flux, B1 solvable) and retries with `cmfd=False`.
   `models/wbn1-core.toml`: WBN1 shape/conditions (VERA Fig. 9, Table P6-1),
-  all VERA-1 fuel + water reflector (illustrative).
+  all VERA-1 fuel + water reflector (illustrative). `fewgroup.reflector`
+  on a one-row slab also gives the reflector ADF (face flux + modal 1D
+  diffusion of each side); the vera-p1 water reflector table predates it
+  (ADF 1). Control rods: `model.spec.ControlRod`/`Banks`,
+  `Lattice.rodded`, `Material.shielded`; `nodal.mesh.stacks/parse_banks`;
+  `feedback.core.bank_worths`, `isothermal` (`--itc`).
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -268,7 +273,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1), C4 CP + clad + 17x17 assembly; M2 state matrix, M3 tables, M4 nodal solver + core at power; theory docs ch. 0–24. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1), C4 CP + clad + 17x17 assembly; M2 state matrix, M3 tables, M4 nodal solver + core at power, loading pattern, Pyrex, control rods; theory docs ch. 0–24. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -368,7 +373,22 @@ self-shielding (C1).
     967 pcm, peak 1.271, AO -7.4%. NEM needed D^ under-relaxation 0.5 for
     the thin axial nodes (`nem.RELAX`, now default). Baffle rerun with full
     SS304 (minus Fe57/58, Mn55, Cr53): zoned core +8 pcm.
-  - Next: control rods
+  - Control rods (done, ch. 22 "Control rods", ch. 13): VERA Table 8 hybrid
+    RCCA (Ag-In-Cd 101.6 cm + B4C), `models/vera-p2-rods.toml` (2G/2H + pin
+    powers P2-9/10; material key `shielded = true` = absorber gets escape
+    table + NR shape + SPH like the clad). 2G +111 pcm (dilute -2546), 2H
+    +242; rod effect 0.9 / 1.2% weak. `[branches.aic|b4c]` in wbn1-fuel-*,
+    `models/wbn1-rods.toml`: `[control_rods.rcca]` (bottom 26.58, step
+    1.5875, 230 steps, zones), `[core.banks]` (Figure 10 map, Table P5-7
+    worths), lattice `rodded = {aic=, b4c=}`; `nodal.mesh.stacks` cuts per
+    position; `--bank D=167`, `feedback --bank-worths`. The power map vs
+    KENO P5-6 (D@167) had a 6% RMS tilt from the baffle reflector:
+    reflector ADFs by 1D equivalence (`moc.face_flux` on the slab face,
+    `reflector.homogeneous_surface_flux` modal, both sides: ADF =
+    f_refl/f_fuel = 1.269/0.258) -> RMS 1.1%. Bank worths vs KENO -7..+5%,
+    total -1.7% (measured +1.1%). Pyrex core HZP now 0.99915 -> critical
+    boron 1292 vs 1291 ppm; ITC -3.24 pcm/F.
+  - Next: open (boron axis / critical search, depletion, full core)
 - **M: model building** (describe the reactor once, as data; generate every calculation from it)
   - M1 declarative model file: TOML layers + states, number densities, homogenization (done)
   - M2 state-matrix driver (done, ch. 20): `make branches`; VERA matrix

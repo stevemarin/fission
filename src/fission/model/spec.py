@@ -59,6 +59,9 @@ class Material:
     thermal: dict[str, str] | None = None  # nuclide -> S(alpha, beta) law
     macroscopic: str | None = None  # name in the model's multigroup library
     table: str | None = None  # few-group table (M3) evaluated at each node's state
+    # resonance self-shielding of this material in the lattice calculation
+    # (besides the fuel and the clad, which always have it): e.g. Ag-In-Cd
+    shielded: bool = False
 
     def thermal_law(self, nuclide: str) -> str:
         return (self.thermal or {}).get(nuclide, "free-gas")
@@ -94,6 +97,9 @@ class Lattice:
     gap: float = (
         0.0  # water around the pins on every side (half the inter-assembly gap)
     )
+    # homogeneous slices only: the lattice to use where a control rod's
+    # absorber (a ControlRod zone name, e.g. "aic") is inserted
+    rodded: dict[str, str] = field(default_factory=dict)
 
     @property
     def width(self) -> float | None:
@@ -127,6 +133,39 @@ class Assembly:
     @property
     def height(self) -> float:
         return sum(s.height for s in self.segments)
+
+
+@dataclass(frozen=True)
+class ControlRod:
+    """The absorber column of a control rod type, listed from bottom to top.
+
+    Positions are in the assembly's axial coordinate (0 at the bottom of the
+    stack). With s steps withdrawn the column starts at bottom + s * step;
+    ``steps`` is the fully withdrawn position."""
+
+    name: str
+    bottom: float  # cm: bottom of the absorber when fully inserted
+    step: float  # cm per step
+    steps: int  # steps at full withdrawal
+    zones: tuple[tuple[str, float], ...]  # (absorber name, height in cm)
+
+
+@dataclass(frozen=True)
+class Banks:
+    """Control rod banks: which map positions each bank moves, and the bank
+    worths (pcm) of a reference calculation and of a measurement."""
+
+    rod: str  # the ControlRod type of every bank
+    positions: dict[str, tuple[tuple[int, int], ...]]  # bank -> (row, col) in the map
+    measured: dict[str, float] = field(default_factory=dict)
+    reference: dict[str, float] = field(default_factory=dict)
+    source: str = ""
+
+    def at(self, row: int, col: int) -> str | None:
+        for bank, cells in self.positions.items():
+            if (row, col) in cells:
+                return bank
+        return None
 
 
 @dataclass(frozen=True)
@@ -178,6 +217,7 @@ class Core:
     vacuum_coefficient: float = 0.5
     state: str | None = None  # operating state (boron; starting temperatures)
     thermal: CoreThermal | None = None
+    banks: Banks | None = None
 
     def full_map(self) -> tuple[tuple[str | None, ...], ...]:
         if self.symmetry == "full":
@@ -259,3 +299,4 @@ class Model:
     states: dict[str, State]
     multigroup: dict[str, MacroXS] = field(default_factory=dict)  # macroscopic data
     branches: dict[str, Branches] = field(default_factory=dict)  # state matrices
+    control_rods: dict[str, ControlRod] = field(default_factory=dict)

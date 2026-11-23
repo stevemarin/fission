@@ -26,7 +26,9 @@ from .spec import (
     SIDES,
     Assembly,
     AxialSegment,
+    Banks,
     Branches,
+    ControlRod,
     Core,
     CoreThermal,
     Isotopics,
@@ -96,6 +98,12 @@ class _Table:
             _fail(self.at(key), f"expected a string, got {_kind(v)}")
         if choices and v not in choices:
             _fail(self.at(key), f"{v!r} is not one of {', '.join(map(repr, choices))}")
+        return v
+
+    def boolean(self, key: str, default: Any = _REQUIRED) -> bool:
+        v = self.raw(key, default)
+        if not isinstance(v, bool):
+            _fail(self.at(key), f"expected true or false, got {_kind(v)}")
         return v
 
     def table(self, key: str, default: Any = _REQUIRED) -> _Table:
@@ -182,6 +190,7 @@ def _material(name: str, m: _Table) -> Material:
         m.finish()  # anything else (densities, formula, ...) is an unknown key here
         return Material(name, temperature, macroscopic=macroscopic)
     temperature = m.string("temperature", choices=("fuel", "moderator"))
+    shielded = m.boolean("shielded", False)
     thermal = None
     if m.has("thermal"):
         t = m.table("thermal")
@@ -205,7 +214,8 @@ def _material(name: str, m: _Table) -> Material:
                     m.at(f"atom_densities.{nuclide}"),
                     "not a nuclide name (like 'U235')",
                 )
-        material = Material(name, temperature, atom_densities=n, thermal=thermal)
+        material = Material(name, temperature, atom_densities=n, thermal=thermal,
+                            shielded=shielded)  # fmt: skip
     else:
         rho: float | str
         if isinstance(m.raw("density"), str):
@@ -238,7 +248,7 @@ def _material(name: str, m: _Table) -> Material:
                 )
         material = Material(
             name, temperature, density=cast(Any, rho), formula=formula,
-            isotopics=isotopics, soluble_boron=boron, thermal=thermal,
+            isotopics=isotopics, soluble_boron=boron, thermal=thermal, shielded=shielded,
         )  # fmt: skip
     m.finish()
     return material
@@ -318,8 +328,13 @@ def _lattice(
         material = t.string("material")
         if material not in materials:
             _fail(t.at("material"), f"unknown material {material!r}")
+        rodded = {}
+        if t.has("rodded"):
+            r = t.table("rodded")
+            rodded = {k: r.string(k) for k in r.data}
+            r.finish()
         t.finish()
-        return Lattice(name, "square", material=material)
+        return Lattice(name, "square", material=material, rodded=rodded)
     pitch = t.number("pitch")
     gap = t.number("gap", 0.0, minimum=None)
     if gap < 0:
@@ -398,9 +413,64 @@ def _core_thermal(t: _Table) -> CoreThermal:
     return th
 
 
+def _control_rod(name: str, t: _Table) -> ControlRod:
+    zones_raw = t.raw("zones")
+    if not isinstance(zones_raw, list) or not zones_raw:
+        _fail(t.at("zones"), "expected a non-empty array of {absorber, height} tables")
+    zones = []
+    for i, entry in enumerate(zones_raw, 1):
+        z = _Table(entry, f"{t.at('zones')}[{i}]")
+        zones.append((z.string("absorber"), z.number("height")))
+        z.finish()
+    steps = t.raw("steps")
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
+        _fail(t.at("steps"), "expected a positive integer")
+    rod = ControlRod(name, t.number("bottom", minimum=None), t.number("step"), steps,
+                     tuple(zones))  # fmt: skip
+    t.finish()
+    return rod
+
+
+def _banks(
+    t: _Table, grid: tuple[tuple[str | None, ...], ...], rods: dict[str, ControlRod]
+) -> Banks:
+    rod = t.string("rod")
+    if rod not in rods:
+        _fail(t.at("rod"), f"unknown control rod {rod!r} (see [control_rods])")
+    text = t.string("map")
+    rows = [line.split() for line in text.splitlines() if line.strip()]
+    if len(rows) != len(grid) or any(len(r) != len(grid[0]) for r in rows):
+        _fail(t.at("map"), f"must have the core map's shape, {len(grid)} rows of "
+              f"{len(grid[0])}")  # fmt: skip
+    positions: dict[str, list[tuple[int, int]]] = {}
+    for i, row in enumerate(rows):
+        for j, token in enumerate(row):
+            if token == ".":
+                continue
+            if grid[i][j] is None:
+                _fail(t.at("map"), f"row {i + 1}: bank {token!r} outside the core")
+            positions.setdefault(token, []).append((i, j))
+
+    def worths(key: str) -> dict[str, float]:
+        if not t.has(key):
+            return {}
+        w = t.table(key)
+        out = {k: w.number(k) for k in w.data}
+        for k in out:
+            if k not in positions:
+                _fail(w.at(k), f"no bank {k!r} in the map")
+        return out
+
+    banks = Banks(rod, {k: tuple(v) for k, v in positions.items()}, worths("measured"),
+                  worths("reference"), t.string("source", ""))  # fmt: skip
+    t.finish()
+    return banks
+
+
 def _core(
-    t: _Table, assemblies: dict[str, Assembly], lattices: dict[str, Lattice]
-) -> Core:
+    t: _Table, assemblies: dict[str, Assembly], lattices: dict[str, Lattice],
+    rods: dict[str, ControlRod],
+) -> Core:  # fmt: skip
     geometry = t.string("geometry", "square")
     _reserved(t.at("geometry"), geometry, ("square",))
     symmetry = t.string("symmetry", "full")
@@ -432,9 +502,10 @@ def _core(
             if width is not None and width > pitch:
                 _fail(t.at("assembly_pitch"), f"lattice {s.lattice!r} of assembly {a!r} "
                       f"is {width:g} cm wide, more than the assembly pitch {pitch:g} cm")  # fmt: skip
+    banks = _banks(t.table("banks"), grid, rods) if t.has("banks") else None
     t.finish()
     return Core(cast(Any, geometry), cast(Any, symmetry), pitch, grid, boundary, vacuum,
-                state, thermal)  # fmt: skip
+                state, thermal, banks)  # fmt: skip
 
 
 def _state(name: str, t: _Table) -> State:
@@ -544,9 +615,22 @@ def parse(data: dict[str, Any], base: Path | None = None) -> Model:
     pins = {k: _pin(k, sec.table(k), materials) for k in sec.data}
     sec = _section(top, "lattices")
     lattices = {k: _lattice(k, sec.table(k), materials, pins) for k in sec.data}
+    for lat in lattices.values():
+        for absorber, other in lat.rodded.items():
+            if other not in lattices:
+                _fail(
+                    f"lattices.{lat.name}.rodded.{absorber}",
+                    f"unknown lattice {other!r}",
+                )
     sec = _section(top, "assemblies")
     assemblies = {k: _assembly(k, sec.table(k), lattices) for k in sec.data}
-    core = _core(top.table("core"), assemblies, lattices) if top.has("core") else None
+    sec = _section(top, "control_rods")
+    rods = {k: _control_rod(k, sec.table(k)) for k in sec.data}
+    core = (
+        _core(top.table("core"), assemblies, lattices, rods)
+        if top.has("core")
+        else None
+    )
     sec = _section(top, "states")
     states = {k: _state(k, sec.table(k)) for k in sec.data}
     if core is not None and core.state is not None and core.state not in states:
@@ -561,7 +645,7 @@ def parse(data: dict[str, Any], base: Path | None = None) -> Model:
     top.finish()
     return Model(
         name, description, materials, pins, lattices, assemblies, core, states, library,
-        branches,
+        branches, rods,
     )  # fmt: skip
 
 

@@ -325,45 +325,48 @@ The steel scatters fast neutrons without slowing them much (iron is 56
 times heavier than a neutron). That shortens the fast diffusion length, and
 it absorbs in both groups. It also displaces water, so less moderation
 happens in the reflector. The water above and below the fuel keeps the
-water-only constants.
+water-only constants. The baffle reflector also carries discontinuity
+factors from the same slab, 1.269 (fast) and 0.258 (thermal). Their
+derivation is in "Control rods" below, where the comparison with KENO's
+power map called for them. All the results that follow include them.
 
 **Results.** All the constants are in place, so `make feedback
 FEEDBACK_MODEL=wbn1-zoned` runs at any power:
 
 | | zero power | 50% power | 100% power |
 | --- | --- | --- | --- |
-| $k$ | 1.08495 | 1.08115 | 1.07678 |
-| power defect | | 323 pcm | 699 pcm |
-| largest assembly power | 1.436 | 1.414 | 1.387 |
-| axial offset (top − bottom) | 0.0% | +1.1% | 0.0% |
-| Doppler temperature, average / max | 565 / 565 K | 677 / 806 K | 809 / 1084 K |
-| peak fuel centreline | 565 K | 1079 K | 1748 K |
-| water outlet | 565 K | 574–591 K | 583–612 K |
-| feedback iterations | 3 | 7 | 10 |
+| $k$ | 1.08451 | 1.08066 | 1.07621 |
+| power defect | | 329 pcm | 711 pcm |
+| largest assembly power | 1.482 | 1.454 | 1.422 |
+| axial offset (top − bottom) | 0.0% | +1.2% | 0.0% |
+| Doppler temperature, average / max | 565 / 565 K | 678 / 813 K | 810 / 1099 K |
+| peak fuel centreline | 565 K | 1096 K | 1786 K |
+| water outlet | 565 K | 573–592 K | 581–613 K |
+| feedback iterations | 3 | 7 | 9 |
 
 The assembly powers at full power (quarter core, centre at top left):
 
 ```text
-1.250  1.387  1.220  1.319  1.119  1.155  0.882  0.667
-1.387  1.235  1.357  1.175  1.246  1.025  1.059  0.655
-1.220  1.357  1.196  1.300  1.101  1.120  0.823  0.598
-1.319  1.175  1.300  1.143  1.223  0.972  0.903  0.465
-1.119  1.246  1.101  1.223  1.181  1.023  0.734
-1.155  1.025  1.120  0.972  1.023  0.893  0.489
-0.882  1.059  0.823  0.903  0.734  0.489
-0.667  0.655  0.598  0.465
+1.282  1.422  1.249  1.346  1.138  1.168  0.884  0.637
+1.422  1.266  1.388  1.199  1.266  1.036  1.061  0.624
+1.249  1.388  1.221  1.323  1.116  1.127  0.821  0.568
+1.346  1.199  1.323  1.160  1.234  0.973  0.889  0.418
+1.138  1.266  1.116  1.234  1.184  1.017  0.691
+1.168  1.036  1.127  0.973  1.017  0.876  0.438
+0.884  1.061  0.821  0.889  0.691  0.438
+0.637  0.624  0.568  0.418
 ```
 
 What the loading pattern does:
 
-* **The peak falls from 2.18 to 1.44** at zero power. The centre no longer
+* **The peak falls from 2.18 to 1.48** at zero power. The centre no longer
   dominates, and the chess board shows: every 2.619% assembly has more
-  power than its 2.11% neighbours (1.436 against 1.288 and 1.267 next to the
-  centre). The hottest channel now heats its water to 612 K, so the core
+  power than its 2.11% neighbours (1.482 against 1.330 and 1.307 next to the
+  centre). The hottest channel now heats its water to 613 K, so the core
   runs at full power below the 623.15 K limit of IF97 region 1. (The code
   does not test for local boiling.)
 * **The edge still loses.** Even with 3.10% fuel, the outer assemblies make
-  0.47–0.67 of the average. The baffle reflects fewer thermal neutrons than
+  0.42–0.64 of the average. The baffle reflects fewer thermal neutrons than
   water would.
 * **The axial shape barely moves with power.** In the uniform core of the
   previous section the power slid to the bottom (−7.5% at half power),
@@ -371,7 +374,7 @@ What the loading pattern does:
   *less* reactive (overmoderated), which pushes the power up. The Doppler
   effect pushes it down, because the fuel at the top is hotter: it sits in
   hotter water. The two nearly cancel.
-* **The power defect is 699 pcm at full power** and comes from the Doppler
+* **The power defect is 711 pcm at full power** and comes from the Doppler
   effect. The water's contribution is positive, so the defect is smaller
   than the fuel temperature alone would give.
 
@@ -444,9 +447,12 @@ reach the inside of the glass) is done by MOC across its regions.
 
 KENO from VERA Table P2-5, pin powers from Figures P2-7 and P2-8. The
 offset in 2B comes from the fuel lattice (chapter 19). Measured against it,
-the rods' worth $\rho_{2E} - \rho_{2B}$ is −8879 pcm here and −8985 pcm in
-KENO, and with 24 rods −17756 against −17952. The Pyrex is **1.1–1.2% too
-weak**, consistently for both patterns. That is about 100 pcm too little
+$\rho_{2E} - \rho_{2B}$ is −8879 pcm here and −8985 pcm in KENO, and with
+24 rods −17756 against −17952. (VERA has no Pyrex-free state at 2E's water
+density, so the difference also contains the denser water, 0.743 against
+0.661 g/cm³. At 1300 ppm that change is worth about +185 pcm in the pin
+cell of chapter 20, small next to the rods.) The Pyrex is
+**1.1–1.2% too weak**, consistently for both patterns. That is about 100 pcm too little
 holddown for 12 rods. The pin powers stay close to KENO with the rods
 in: the lowest pin falls from 0.941 (2B) to 0.931 (2E) and 0.908 (2F), and
 no pin differs by more than 0.3%.
@@ -498,64 +504,310 @@ That is what a PWR at power needs.
 
 | | zero power | 50% power | 100% power |
 | --- | --- | --- | --- |
-| $k$ | 1.00025 | 0.99572 | 0.99067 |
-| power defect | | 454 pcm | 967 pcm |
-| largest assembly power | 1.322 | 1.296 | 1.271 |
-| axial offset (top − bottom) | −0.2% | −3.6% | −7.4% |
-| Doppler temperature, average / max | 565 / 565 K | 677 / 783 K | 808 / 1036 K |
-| peak fuel centreline | 565 K | 1027 K | 1634 K |
-| water outlet | 565 K | 578–589 K | 591–609 K |
-| feedback iterations | 3 | 7 | 19 |
+| $k$ | 0.99915 | 0.99461 | 0.98951 |
+| power defect | | 457 pcm | 975 pcm |
+| largest assembly power | 1.324 | 1.300 | 1.277 |
+| axial offset (top − bottom) | −0.2% | −3.5% | −7.3% |
+| Doppler temperature, average / max | 565 / 565 K | 677 / 784 K | 808 / 1039 K |
+| peak fuel centreline | 565 K | 1029 K | 1640 K |
+| water outlet | 565 K | 577–589 K | 588–609 K |
+| feedback iterations | 3 | 7 | 20 |
 
 The assembly powers at full power (quarter core, centre at top left; the
 Pyrex map is in `models/wbn1-pyrex.toml`):
 
 ```text
-1.005  0.929  1.014  0.982  1.105  1.031  1.054  0.807
-0.929  1.000  0.895  1.070  1.032  1.133  1.026  0.918
-1.014  0.895  1.050  1.014  1.147  1.113  1.081  0.827
-0.982  1.070  1.014  1.140  1.070  1.137  1.040  0.722
-1.105  1.032  1.147  1.070  1.271  0.915  0.993
-1.031  1.133  1.113  1.137  0.915  0.946  0.699
-1.054  1.026  1.081  1.040  0.993  0.699
-0.807  0.918  0.827  0.722
+1.058  0.977  1.062  1.023  1.140  1.052  1.063  0.772
+0.977  1.051  0.936  1.112  1.063  1.155  1.032  0.872
+1.062  0.936  1.093  1.049  1.175  1.127  1.079  0.783
+1.023  1.112  1.049  1.171  1.088  1.140  1.019  0.639
+1.140  1.063  1.175  1.088  1.277  0.904  0.915
+1.052  1.155  1.127  1.140  0.904  0.913  0.608
+1.063  1.032  1.079  1.019  0.915  0.608
+0.772  0.872  0.783  0.639
 ```
 
-* **Critical at 1300 ppm.** The rods are worth −7805 pcm in the core at
-  zero power, and $k$ falls from 1.08495 to 1.00025. Our tables have no
+* **Critical at 1300 ppm.** The rods are worth −7878 pcm in the core at
+  zero power, and $k$ falls from 1.08451 to 0.99915. Our tables have no
   boron axis, so the code cannot search the critical boron itself. With the
   measured differential boron worth, −10.77 pcm/ppm [[VERA](#ref-vera)
-  Table P5-7], the +25 pcm at 1300 ppm becomes +122 pcm at the measured
-  1291 ppm: a predicted critical boron about 11 ppm too high. That is
+  Table P5-7], the −85 pcm at 1300 ppm is made up by 8 ppm less boron: a
+  predicted critical boron of 1292 ppm against the measured 1291. That is
   closer than the model deserves. It has no spacer grids, no nozzles, a
   smeared baffle and assembly constants that are −193 pcm off in 2B and
-  1.1% weak in the Pyrex, and some of these errors cancel.
+  1.1% weak in the Pyrex, and some of these errors cancel. (Before the
+  reflector discontinuity factors of "Control rods" it was 1.00025, 11 ppm
+  high.)
 * **The isothermal temperature coefficient.** At zero power the start-up
   tests heat fuel and water together, from 560 to 570 K, and measure the
   reactivity change. `python -m fission.feedback wbn1-pyrex --itc` does
   the same (`feedback.core.isothermal`: one temperature everywhere, IF97
-  density, fixed boron, NEM). It gives $k$ = 1.000528, 1.000249 and
-  0.999934 at 560, 565 and 570 K: **−5.94 pcm/K = −3.30 pcm/°F**.
+  density, fixed boron, NEM). It gives $k$ = 0.999420, 0.999146 and
+  0.998837 at 560, 565 and 570 K: **−5.84 pcm/K = −3.24 pcm/°F**.
   Table P5-7 gives −2.17 pcm/°F measured and −3.18 ± 0.04 pcm/°F from CE
-  KENO-VI. We agree with KENO within 4%, which is the closer comparison
+  KENO-VI. We agree with KENO within 2%, which is the closer comparison
   (same idealized core, no thermal expansion). 560 K and 0.752 g/cm³ are just outside
   the tables (565–600 K, 0.661–0.743 g/cm³), so that point is extrapolated
   linearly, and the reflector keeps its 565 K constants. Without
-  Pyrex (`wbn1-zoned`) the same calculation gives **+3.42 pcm/°F**.
+  Pyrex (`wbn1-zoned`) the same calculation gives **+3.43 pcm/°F**.
 * **Flatter, and the peak moves.** The largest assembly power falls from
-  1.436 to 1.322 at zero power. The peak is now the one 2.619% assembly
+  1.482 to 1.324 at zero power. The peak is now the one 2.619% assembly
   without Pyrex (row 5, column 5 of the quarter map). Every other 2.619%
   assembly carries 16 to 24 rods and gives up power to the 2.11% fuel.
-  The centre (2.11%) falls from 1.288 to 0.927, but its rodded 2.619%
-  neighbours fall further (1.436 to 0.857), so the chess board is now
+  The centre (2.11%) falls from 1.330 to 0.995, but its rodded 2.619%
+  neighbours fall further (1.482 to 0.918), so the chess board is now
   inverted: the 2.11% assemblies make more power than the 2.619%
   assemblies around them.
 * **The power goes to the bottom.** The axial offset goes from −0.2% to
-  −7.4% at full power. Like the uniform core of "Results" and unlike the
+  −7.3% at full power. Like the uniform core of "Results" and unlike the
   zoned core without Pyrex, denser water is now *more* reactive, so the
   cool bottom half takes more power. Doppler pushes the same way.
-* **The power defect grows** from 699 to 967 pcm, because now the water
+* **The power defect grows** from 711 to 975 pcm, because now the water
   adds to the Doppler effect instead of offsetting it.
+
+## Control rods
+
+Soluble boron changes slowly: the plant dilutes or borates the whole
+primary circuit. Fast changes, and shutdown, are the job of the control
+rods. A rod cluster control assembly (RCCA) is a spider of 24 rodlets that
+enters the 24 guide tubes of one assembly from above. The rods move in
+groups, called banks. Watts Bar's cycle 1 has four control banks A–D and
+four shutdown banks SA–SD [[VERA](#ref-vera) §1.6, Figure 10].
+
+**Two absorbers in one rod.** The Watts Bar rodlets are hybrids (Table 8).
+The lower 101.6 cm is silver-indium-cadmium (Ag-In-Cd, 80/15/5 wt%,
+10.2 g/cm³, radius 0.382 cm). The upper 259.08 cm is boron carbide (B₄C,
+1.76 g/cm³, radius 0.373 cm). Both sit in an SS304 tube (0.386–0.484 cm)
+with helium between, and fully inserted the poison starts 5.08 cm above
+the bottom of the fuel. One step moves the rod 1.5875 cm, and 230 steps
+take it out. The number densities of Table P2-4 give back the
+specification exactly: 10.20 and 1.76 g/cm³, and 80.0/15.0/5.0 wt%.
+
+The two absorbers capture in different ways. Boron absorbs through
+B-10(n,α), 3844 b at 0.0253 eV and falling as $1/v$, with no resonances:
+in B₄C the mean free path of a thermal neutron is 0.17 mm. Ag-In-Cd
+absorbs mostly in resonances. Our 0 K tables give:
+
+| nuclide | capture peak | at 0.0253 eV | in the rod |
+| --- | --- | --- | --- |
+| In-115 | 38 200 b at 1.457 eV | 202 b | mean free path 34 μm |
+| Ag-109 | 31 100 b at 5.19 eV | 90 b | mean free path 15 μm |
+| Ag-107 | 2 970 b at 16.3 eV | 37 b | |
+| Cd-113 | 61 800 b at 0.174 eV | 19 900 b | |
+
+At the peak of the Ag-109 resonance a neutron entering the rod travels
+15 μm. The rod is 3.8 mm thick, so it is black there. A group constant
+that averages the capture cross section with a smooth weighting spectrum
+(infinite dilution) assumes the flux inside the rod is the same at the
+peak as in the wings of the resonance. In reality the flux at the peak is
+almost zero a few micrometres in. That is resonance self-shielding, the
+problem of chapters 16, 17 and 19, now in an absorber instead of the fuel.
+
+**Shielding the absorber.** The code already has the tools. For the fuel
+it computes, by MOC, the escape probability $P(\Sigma)$ of the region for
+any total cross section, and turns it into a flux shape with the
+narrow-resonance balance (chapter 16):
+
+$$
+\phi(E) = P(\Sigma_t(E)) + \bigl(1 - P(\Sigma_t(E))\bigr)\,\frac{\Sigma_p}{\Sigma_t(E)}.
+$$
+
+The first term is the neutrons that arrive from outside, attenuated. The
+second is the ones that scatter inside. For a black absorber the first
+term carries almost everything. A material marked `shielded = true` in
+the model file gets this treatment: its own escape probability table
+from the assembly geometry (all 24 rodlets together), its own flux shape
+and libraries, and SPH factors (chapter 17) so that the multigroup MOC
+reproduces the shielded reaction rates. The fuel's slowing-down march is
+not used here. The narrow-resonance balance treats the rod's own
+scattering simply, and in a nearly black absorber the inflow term
+dominates anyway.
+
+**Against KENO.** VERA problem 2 has both rods in all 24 guide tubes, at
+600 K and 0.743 g/cm³ (states 2G and 2H; KENO from Table P2-5, pin powers
+from Figures P2-9 and P2-10). `models/vera-p2-rods.toml` holds them:
+
+| state | $k$ (this code) | KENO | difference | pin powers, RMS / max |
+| --- | --- | --- | --- | --- |
+| 2G, Ag-In-Cd shielded | 0.84881 | 0.847695 | +111 pcm | 0.22% / 0.60% |
+| 2G, Ag-In-Cd infinitely dilute | 0.82223 | 0.847695 | −2546 pcm | 0.74% / 1.41% |
+| 2H, B₄C | 0.79064 | 0.788221 | +242 pcm | 0.19% / 0.49% |
+
+Without shielding the rod absorbs far too much: 2.5% in $k$, and
+$\rho_{2G} - \rho_{2B}$ = −36977 pcm, 11% more than KENO's. With it, measured from the 2B offset like the Pyrex,
+$\rho_{2G} - \rho_{2B}$ is −33169 pcm against KENO's −33462 (0.9% weak), and
+$\rho_{2H} - \rho_{2B}$ −41837 against −42363 (1.2% weak). The B₄C rod is
+as weak as the Pyrex glass (1.1–1.2%). Both get their worth from B-10
+(n,α), which suggests a common cause in the boron data or its thermal
+treatment. KENO's reference uses ENDF/B-VII.0, this code ENDF/B-VIII.1.
+The pin powers next to the rods agree to 0.5–0.6%. The infinitely dilute
+rod depresses its neighbours too much: the largest error, 1.4%, is at
+the assembly corner, the pin farthest from any rod, which takes the power
+the rodded region loses.
+
+**Rodded lattices for the core.** The core needs constants for fuel with
+rods in, at every state the feedback can reach. Each fuel file
+(`wbn1-fuel-{211,262,310}.toml`) gains `[branches.aic]` and
+`[branches.b4c]`: the 24-rod lattice with the Ag-In-Cd or the B₄C
+rodlets, on the same 2×2×2 axes as `[branches.core]`. That is 48 assembly
+calculations. With two running side by side they took 25–30 min each for
+Ag-In-Cd, whose SPH adds a fixed-source MOC per group, and about 20 min for
+B₄C. The fuel temperature coefficient of the rodded 3.10% lattice is
+−3.54 pcm/K, against −2.36 without the rods. The rods take most of the
+thermal neutrons, so resonance capture in U-238 is a larger share of
+what is left.
+
+**Banks in the model.** `models/wbn1-rods.toml` extends `wbn1-pyrex`. It
+gives each fuel lattice its rodded versions (`rodded = { aic = ..., b4c =
+... }`), and it describes the rod and the banks as data (chapter 13). The
+banks sit on the quarter map of VERA Figure 10:
+
+```text
+D . A . D . C .          quarter core, centre at top left
+. . . . . SB . .
+A . C . . . B .          57 RCCAs in the full core, all in
+. . . A . SC . .         assemblies without Pyrex
+D . . . D . SA
+. SB . SD . .
+C . B . SA
+. . . .
+```
+
+A position at $s$ steps withdrawn has its absorber column start at
+$26.58 + 1.5875\,s$ cm, measured from the bottom of the lower reflector.
+The code cuts that assembly's axial stack at the edges of the Ag-In-Cd
+and B₄C zones (`nodal.mesh.stacks`). The cut nodes take the rodded
+lattice, and the nodal mesh is cut at the union of all the stacks
+(chapter 13). Fully inserted, the Ag-In-Cd occupies the bottom 101.6 cm
+of the fuel and the B₄C the rest.
+
+**The core's power map against KENO.** VERA gives the KENO-VI assembly
+powers of this core at its initial criticality: 1285 ppm, bank D at 167
+steps, everything else out (Figure P5-6). `make feedback
+FEEDBACK_MODEL=wbn1-rods` at zero power with `--bank D=167` (at 1300
+ppm, the tables have no boron axis) gives the same map with a clear tilt.
+The centre assemblies are 8% low, the edge ones up to 13% high, RMS 6.0%.
+The tilt is the same at 2×2 nodes per assembly, so it is not the nodal
+mesh. Nor is it the assembly constants, which match KENO within 0.2% in
+every lattice (above, and chapter 19). What is left is the interface
+between the fuel and the baffle reflector.
+
+**Reflector discontinuity factors.** A homogenized node reproduces its
+heterogeneous reaction rates and face currents only if the flux is
+allowed to jump at its faces, $f_A\phi_A = f_B\phi_B$ (chapter 19
+computes the factors $f$ of an assembly, chapter 21's NEM applies them).
+Between two fuel assemblies the jump is small (ADFs of 0.996–1.0). At
+the reflector it is not. Smith's equivalence theory [[Smith](#ref-smith1980)] gets the factors
+from the same fuel | baffle | water slab that gives the reflector its
+constants.
+
+1. The MOC solution of the slab gives the scalar flux $\phi_s$ on the
+   fuel-reflector face (`moc.face_flux`: one more sweep from the
+   converged solution, each crossing contributing $W\psi/(\sin\theta
+   |\cos\varphi|)$).
+2. Each side, homogenized with its own MOC flux, is then solved as a
+   homogeneous two-group diffusion problem with the far side reflective,
+   as in the slab:
+   $$
+   -D\phi'' + \Bigl(A - \tfrac{1}{k}F\Bigr)\phi = 0,
+   $$
+   with the removal matrix $A$ (absorption, out-scattering, minus
+   in-scattering) and the fission matrix $F_{gh} = \chi_g\nu\Sigma_{f,h}$,
+   zero in the reflector. Write
+   $D^{-1}(A - F/k) = V\,\mathrm{diag}(\kappa_i^2)\,V^{-1}$. The solution is a sum of
+   $\cosh\kappa_i(W-x)$ modes, and on the face
+   $$
+   \phi(0) = V\,\mathrm{diag}\bigl(\kappa_i W \coth \kappa_i W\bigr)\,V^{-1}\,\bar\phi,
+   $$
+   where $\bar\phi$ is the side's average flux. Fixing $\bar\phi$ is the
+   same as fixing the net current through the face: by the side's
+   balance, $J = (A - F/k)\bar\phi\,W$. In the fuel the fundamental mode
+   has $\kappa^2 < 0$, and the cosh becomes a cosine; complex arithmetic
+   covers both (`fewgroup.reflector.homogeneous_surface_flux`, tested
+   against fine-mesh finite differences).
+3. Each side's factor is $f = \phi_s / \phi(0)$. The nodal interface
+   condition sees only the ratio $f_{\mathrm{refl}}/f_{\mathrm{fuel}}$, and in the
+   core the fuel keeps the ADF of its own infinite lattice (about 1). So
+   the reflector table gets $f_{\mathrm{refl}}/f_{\mathrm{fuel}}$.
+
+The slab gives:
+
+| | fast | thermal |
+| --- | --- | --- |
+| reflector side, $\phi_s/\phi_{\mathrm{refl}}(0)$ | 1.153 | 0.248 |
+| fuel side, $\phi_s/\phi_{\mathrm{fuel}}(W)$ | 0.909 | 0.962 |
+| reflector ADF | 1.269 | 0.258 |
+
+The thermal factor is far from 1, and for a clear reason. In the slab the
+thermal flux on the face is low: the steel next to the fuel absorbs, and
+the thermal flux peaks several centimetres out, in the water behind the
+baffle. The homogenized reflector smears steel and water together and
+puts its thermal flux where its source is, at the face. Without the
+factor, continuity of flux at the face makes the reflector send far too
+many thermal neutrons back into the fuel. The fuel side matters too. A
+first version took only the reflector side, $f = 1.153 / 0.248$, and
+overcorrected: the centre went 3% high and the edge 9% low, RMS 3.0%.
+
+With both sides, the assembly powers against KENO (per cent; Figure P5-6,
+octant, centre at top left):
+
+```text
+ -1.4
+ -1.9  -1.1
+ -1.0  -2.2  -0.4
+ -1.1  -0.4  -1.1  +0.5
+ +0.1  -0.7  +0.5  +0.0  +0.7
+ +0.0  +0.8  +0.1  +1.3  +1.1  +1.4
+ +1.2  +0.2  +1.7  +0.8  -0.4  -3.0
+ +0.2  -0.0  +0.5  -0.8
+```
+
+RMS 1.1%, largest −3.0%, from 6.0% and +13%. The eigenvalue at this state
+is 0.99815 at 1300 ppm. With the measured boron worth (−10.77 pcm/ppm) it
+becomes about −23 pcm at the measured 1285 ppm. All the core results of
+this chapter's baffle sections are with these factors (the uniform core
+of "Results" has a water reflector and keeps the older constants without
+them).
+
+**Bank worths.** `python -m fission.feedback wbn1-rods --bank-worths`
+inserts each bank fully, alone, at zero power. This is how VERA's KENO
+reference is defined: each bank with the others withdrawn
+[[VERA](#ref-vera) Problem 5, "Reference solution results and measured data"]. The measured worths come
+from rod swap against bank D, inferred with KENO shadow factors, at
+1170 ppm. VERA calls the boron a secondary effect (2 pcm on bank D):
+
+| bank | this code (pcm) | KENO | difference | measured | difference | no reflector ADF |
+| --- | --- | --- | --- | --- | --- | --- |
+| D | 1368 | 1386 | −1.3% | 1342 | +1.9% | 1320 (−4.8%) |
+| A | 861 | 898 | −4.1% | 843 | +2.1% | 797 (−11.3%) |
+| C | 958 | 984 | −2.6% | 951 | +0.8% | 911 (−7.4%) |
+| SB | 1055 | 1066 | −1.0% | 1056 | −0.1% | 1033 (−3.1%) |
+| B | 897 | 875 | +2.5% | 879 | +2.0% | 940 (+7.4%) |
+| SC | 466 | 499 | −6.6% | 480 | −2.9% | 477 (−4.5%) |
+| SA | 469 | 447 | +5.0% | 435 | +7.9% | 530 (+18.6%) |
+| SD | 466 | 499 | −6.6% | 480 | −2.9% | 477 (−4.5%) |
+| total | 6540 | 6654 | −1.7% | 6467 | +1.1% | 6484 (−2.6%) |
+
+(KENO and measured values from Table P5-7; the last column against KENO.)
+
+* **The reflector made the pattern.** Without the factors, central banks
+  (A, C, D) were too weak and peripheral ones (B, SA) too strong. A
+  bank's worth grows roughly with the square of the flux where it sits
+  (first-order perturbation theory weights an absorber by $\phi\phi^\dagger$),
+  so a radial tilt shows up twice in it. With the factors the spread
+  falls from −11..+19% to −7..+5% against KENO.
+* **The total is 1.7% weak against KENO**, close to the 0.9% (Ag-In-Cd)
+  and 1.2% (B₄C) of the single assembly. Most of the rod's worth comes from
+  the lower Ag-In-Cd zone at zero power, because the axial flux peaks
+  mid-core and the Ag-In-Cd covers the bottom 102 cm.
+* **SC and SD.** In the real core these banks sit at positions that are
+  related by a quarter rotation, not by reflection. A reflective quarter
+  core cannot reproduce that exactly. Here SC and SD come out equal (466
+  pcm). KENO, on the full core, also has them equal (499). They are 6.6%
+  weak, more than the other banks, perhaps from this approximation.
+* **Against the plant** the total is within 1.1%, and every bank but SA
+  is within 3%. KENO itself is 2.9% high on the total. Part of our
+  apparent agreement with the measurement is the 1.7% our rods are weak.
 
 ## Further reading
 
@@ -569,11 +821,17 @@ Pyrex map is in `models/wbn1-pyrex.toml`):
 * [[VERA](#ref-vera)] (free): Watts Bar core data (Figure 9, Tables 1, 18,
   P6-1); the Pyrex rod and its patterns (Table 6, Figure 5, Table P2-4),
   KENO references (Table P2-5, Figures P2-7, P2-8) and the start-up tests
-  (Table P5-7).
+  (Table P5-7); the control rods (Table 8, Figure 10), KENO for 2G/2H
+  (Figures P2-9, P2-10) and the core's power map (Figure P5-6).
+* [[Smith](#ref-smith1980)] (free to read): discontinuity factors, the
+  equivalence behind the reflector factors.
 * Code: [`feedback/water.py`](../../src/fission/feedback/water.py),
   [`feedback/convection.py`](../../src/fission/feedback/convection.py),
   [`feedback/fuel.py`](../../src/fission/feedback/fuel.py),
   [`feedback/core.py`](../../src/fission/feedback/core.py) (`make feedback`),
   [`fewgroup/reflector.py`](../../src/fission/fewgroup/reflector.py)
   (`make reflector`), `models/wbn1-core.toml`, `models/wbn1-zoned.toml`
-  (with `wbn1-fuel-*.toml` and `wbn1-baffle.toml`).
+  (with `wbn1-fuel-*.toml` and `wbn1-baffle.toml`), `models/wbn1-pyrex.toml`,
+  `models/vera-p2-rods.toml`, `models/wbn1-rods.toml`;
+  [`nodal/mesh.py`](../../src/fission/nodal/mesh.py) (`stacks`: the banks
+  cut the axial stacks).

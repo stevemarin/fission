@@ -174,6 +174,54 @@ def test_reflector_slab_water_cells():
 
 
 @pytest.mark.parametrize(
+    ("nu_sigma_f", "k", "current"),
+    [((0.0, 0.0), np.inf, (1.0, 0.1)),  # baffle-like reflector, current entering
+     ((0.0065, 0.13), 1.0, (-1.0, -0.3))],  # fuel at the slab's k, current leaving
+)  # fmt: skip
+def test_homogeneous_surface_flux_matches_finite_differences(nu_sigma_f, k, current):
+    """The modal solution of a homogeneous medium against a fine-mesh
+    finite-difference one driven by a current at x = 0 (with a little
+    up-scattering; in the fuel the fundamental mode is a cosine)."""
+    from fission.fewgroup.condense import FewGroup
+    from fission.fewgroup.reflector import homogeneous_surface_flux
+
+    two = np.ones(2)
+    s = np.array([[0.5956, 0.0270], [0.00079, 1.641]])
+    fg = FewGroup("r", (2e7, 0.625, 1e-5), two, np.array([1.338, 0.307]),
+                  two, np.array([0.00226, 0.0369]), s, np.array(nu_sigma_f), 0 * two,
+                  0 * two, np.array([1.0, 0.0]), 0.0)  # fmt: skip
+    width, n = 21.42, 1500
+    h = width / n
+    a = np.diag(fg.sigma_a + np.array([s[0, 1], s[1, 0]])) - np.array(
+        [[0.0, s[1, 0]], [s[0, 1], 0.0]]
+    )
+    a = a - np.outer(fg.chi, fg.nu_sigma_f) / k
+    current = np.array(current)
+    # unknowns (cell, group); D phi'' by cell-centred differences
+    m = np.zeros((2 * n, 2 * n))
+    rhs = np.zeros(2 * n)
+    for i in range(n):
+        for g in range(2):
+            row = 2 * i + g
+            d = fg.D[g] / h**2
+            m[row, 2 * i : 2 * i + 2] += a[g]
+            if i > 0:
+                m[row, row] += d
+                m[row, row - 2] -= d
+            if i < n - 1:
+                m[row, row] += d
+                m[row, row + 2] -= d
+    rhs[0:2] = current / h
+    phi = np.linalg.solve(m, rhs).reshape(n, 2)
+    average = phi.mean(axis=0)
+    surface = phi[0] + current * h / (2 * fg.D)  # half a cell back to x = 0
+    got = homogeneous_surface_flux(fg, average, width, k)
+    np.testing.assert_allclose(got, surface, rtol=1e-4)
+    # the balance that makes the average equivalent to the current
+    np.testing.assert_allclose(a @ average * width, current, rtol=1e-8)
+
+
+@pytest.mark.parametrize(
     ("t", "rho", "mu"),  # IAPWS R12-08, Table 4 (micro Pa s)
     [(298.15, 998.0, 889.735100), (298.15, 1200.0, 1437.649467),
      (373.15, 1000.0, 307.883622), (433.15, 1000.0, 217.685358),

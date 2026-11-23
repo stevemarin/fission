@@ -1,0 +1,114 @@
+# VERA problem 2 with control rods: cases 2G (24 Ag-In-Cd rodlets) and 2H
+# (24 B4C rodlets), the two halves of the Watts Bar hybrid RCCA.
+#
+# Source: CASL-U-2012-0131-004 Rev. 4 (free:
+# https://corephysics.com/docs/CASL-U-2012-0131-004.pdf)
+#   Section 1.6, Table 8  RCCA rodlets: AIC (80/15/5 wt% Ag/In/Cd, 10.2 g/cc,
+#               radius 0.382 cm) in the lower 101.6 cm, B4C (1.76 g/cc,
+#               radius 0.373 cm) above; helium gap, SS304 clad 0.386-0.484 cm;
+#               a rodded assembly has a rodlet in each of its 24 guide tubes
+#   Table P2-1  2G, 2H: fuel and water at 600 K, water 0.743 g/cc, 1300 ppm
+#   Table P2-4  AIC, B4C and SS304 number densities
+#   Table P2-5  CE KENO-VI reference eigenvalues
+#   Figures P2-9, P2-10  CE KENO-VI pin powers (vera-p2-pin-powers.toml)
+# The rodlet sits in a guide tube (Table 2), water between them. The steel
+# (from vera-p2-pyrex) leaves out Mn-55, Cr-53, Fe-57 and Fe-58 (formats).
+
+[model]
+extends = "vera-p2-pyrex"
+name = "VERA problem 2, control rods"
+description = "Westinghouse 17x17 lattice with Ag-In-Cd or B4C control rodlets"
+
+[materials.aic]                     # Table P2-4
+temperature = "moderator"
+shielded = true                     # Ag-109 5.2 eV, In-115 1.46 eV, Ag-107 16 eV
+[materials.aic.atom_densities]
+Ag107 = 2.36159e-02
+Ag109 = 2.19403e-02
+Cd106 = 3.41523e-05
+Cd108 = 2.43165e-05
+Cd110 = 3.41250e-04
+Cd111 = 3.49720e-04
+Cd112 = 6.59276e-04
+Cd113 = 3.33873e-04
+Cd114 = 7.84957e-04
+Cd116 = 2.04641e-04
+In113 = 3.44262e-04
+In115 = 7.68050e-03
+
+[materials.b4c]                     # Table P2-4
+temperature = "moderator"
+[materials.b4c.atom_densities]
+B10 = 1.52689e-02
+B11 = 6.14591e-02
+C12 = 1.91820e-02                   # natural carbon in the table (6000)
+
+[pins.aic_rod]                      # Table 8, in a guide tube (Table 2)
+radii = [0.382, 0.386, 0.484, 0.561, 0.602]
+materials = ["aic", "gap", "ss304", "moderator", "clad", "moderator"]
+
+[pins.b4c_rod]                      # Table 8, in a guide tube (Table 2)
+radii = [0.373, 0.386, 0.484, 0.561, 0.602]
+materials = ["b4c", "gap", "ss304", "moderator", "clad", "moderator"]
+
+[lattices.aic_24]                   # every guide tube rodded
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", A = "aic_rod", I = "instrument_tube" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F A F F A F F A F F F F F
+F F F A F F F F F F F F F A F F F
+F F F F F F F F F F F F F F F F F
+F F A F F A F F A F F A F F A F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F A F F A F F I F F A F F A F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F A F F A F F A F F A F F A F F
+F F F F F F F F F F F F F F F F F
+F F F A F F F F F F F F F A F F F
+F F F F F A F F A F F A F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[lattices.b4c_24]
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", B = "b4c_rod", I = "instrument_tube" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F B F F B F F B F F F F F
+F F F B F F F F F F F F F B F F F
+F F F F F F F F F F F F F F F F F
+F F B F F B F F B F F B F F B F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F B F F B F F I F F B F F B F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F B F F B F F B F F B F F B F F
+F F F F F F F F F F F F F F F F F
+F F F B F F F F F F F F F B F F F
+F F F F F B F F B F F B F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[states.2G]
+fuel_temperature = 600.0
+moderator_temperature = 600.0
+moderator_density = 0.743
+boron_ppm = 1300
+reference = { keff = 0.847695, sigma = 0.000025, source = "Table P2-5: CE KENO-VI, ENDF/B-VII.0, 24 AIC (lattice aic_24)" }
+
+[states.2H]
+fuel_temperature = 600.0
+moderator_temperature = 600.0
+moderator_density = 0.743
+boron_ppm = 1300
+reference = { keff = 0.788221, sigma = 0.000025, source = "Table P2-5: CE KENO-VI, ENDF/B-VII.0, 24 B4C (lattice b4c_24)" }

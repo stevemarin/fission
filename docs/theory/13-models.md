@@ -175,6 +175,29 @@ Larger maps are multi-line strings with one legend letter per pin
 (`F F G F F ...`). Assemblies list their axial segments from bottom to
 top, and the core map uses `.` for positions outside the core.
 
+**Control rods** (added with chapter 22) are data too, in three parts.
+A rod type lists its absorber zones from the bottom up, where the column
+starts when fully inserted, and the length of one step:
+
+```toml
+[control_rods.rcca]
+bottom = 26.58                      # cm, fully inserted
+step = 1.5875                       # cm per step
+steps = 230                         # fully withdrawn
+zones = [{ absorber = "aic", height = 101.6 }, { absorber = "b4c", height = 259.08 }]
+```
+
+A homogeneous lattice names the lattice that replaces it where an absorber
+reaches it, as in `[lattices.fuel_211] rodded = { aic = "fuel_211_aic",
+b4c = "fuel_211_b4c" }`. A lattice without a `rodded` entry, like the water
+above the fuel, stays as it is. Finally `[core.banks]` puts bank names on
+a copy of the core map and can carry reference worths. A calculation
+names the banks it inserts and their positions in steps withdrawn (`--bank
+D=0`). The code then cuts the stacks of those positions at the zone edges.
+A material can also ask for resonance self-shielding in the lattice
+calculation (`shielded = true`, used for Ag-In-Cd), as the fuel and the
+clad always get.
+
 **Checks.** Reading the file checks everything, and every error names its
 place in the file:
 

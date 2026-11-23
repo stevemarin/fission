@@ -194,6 +194,11 @@ source or a standard text.
   properties (after Finnemann, 1991).
   <https://www.oecd-nea.org/upload/docs/application/pdf/2020-10/mox_benchmark_specifications_2003.pdf>
   **(free)**
+- []{#ref-smith1980}**[Smith]** K. S. Smith, *Spatial homogenization
+  methods for light water reactor analysis*, Ph.D. thesis, MIT, Department
+  of Nuclear Engineering (1980): the discontinuity factors of
+  generalized equivalence theory.
+  <https://dspace.mit.edu/handle/1721.1/16042> **(free to read)**
 - []{#ref-feenox}**[FeenoX]** FeenoX documentation, *Neutron diffusion*
   examples: the IAEA 2D and 3D PWR benchmarks, with the problem description
   of ANL-7416 Supplement 2, problem 11 (figs. 3-5), and finite-element

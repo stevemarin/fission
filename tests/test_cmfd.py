@@ -152,3 +152,35 @@ def test_surface_flux_of_a_uniform_medium():
     average = (p.areas[:, None] * sol.flux).sum(axis=0) / p.areas.sum()
     for side, phi in surface_flux(p, sol.psi).items():
         np.testing.assert_allclose(phi, average, rtol=2e-3, err_msg=side)
+
+
+def test_face_flux_of_a_uniform_medium():
+    """Flat flux: a line across the domain sees the volume flux. (Single
+    faces do not: at grazing angles one crossing stands for a whole face,
+    so how a line's crossings split between its faces is noise, here
+    -0.57/+1.15/-0.57% over the three rows.)"""
+    from fission.transport.moc import face_flux, with_materials
+
+    p = _lattice()
+    p = with_materials(p, {m: p.xs[0] for m in set(p.geometry.materials())})
+    sol = solve(p, tol_k=1e-10, tol_source=1e-9)
+    average = (p.areas[:, None] * sol.flux).sum(axis=0) / p.areas.sum()
+    lines = [[1, 5, 9], [2, 6, 10], [15, 16, 17], [18, 19, 20]]  # x = p, 2p; y = p, 2p
+    for line in lines:
+        np.testing.assert_allclose(
+            face_flux(sol, line).mean(axis=0), average, rtol=1e-6
+        )
+
+
+def test_face_flux_on_the_boundary_is_the_surface_flux():
+    """On a reflective side the face tally (both directions) and
+    surface_flux (entering only, times 2) count the same flux."""
+    from fission.transport.moc import face_flux, surface_flux
+
+    p = _lattice()
+    sol = solve(p, tol_k=1e-10, tol_source=1e-9)
+    left = face_flux(sol, [0, 4, 8]).mean(axis=0)  # x = 0 in the three rows
+    bottom = face_flux(sol, [12, 13, 14]).mean(axis=0)  # y = 0
+    side = surface_flux(p, sol.psi)
+    np.testing.assert_allclose(left, side["left"], rtol=1e-6)
+    np.testing.assert_allclose(bottom, side["bottom"], rtol=1e-6)

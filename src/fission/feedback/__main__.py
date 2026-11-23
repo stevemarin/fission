@@ -14,8 +14,30 @@ import numpy as np
 
 from fission.model import load_model
 from fission.nodal.__main__ import assembly_powers
+from fission.nodal.mesh import parse_banks
 
-from .core import isothermal, solve
+from .core import bank_worths, isothermal, solve
+
+
+def bank_worth_report(model, refine: int = 1, axial: float | None = None) -> str:
+    """Bank worths against the model's measured and reference values."""
+    core = model.core
+    assert core is not None and core.banks is not None
+    k_out, worths = bank_worths(model, refine, axial)
+    b = core.banks
+    lines = [f"{model.name}: all rods out k = {k_out:.6f} (zero power, inlet temperature)",
+             f"  bank   worth (pcm)   reference   measured   ({b.source})"]  # fmt: skip
+    for bank, w in worths.items():
+        ref = b.reference.get(bank)
+        mea = b.measured.get(bank)
+        cols = [f"{x:6.0f} ({100 * (w / x - 1):+5.1f}%)" if x else " " * 15
+                for x in (ref, mea)]  # fmt: skip
+        lines.append(f"  {bank:5s} {w:9.0f}      " + "  ".join(cols))
+    total = sum(worths.values())
+    sums = [sum(d.values()) if d else None for d in (b.reference, b.measured)]
+    cols = [f"{x:6.0f} ({100 * (total / x - 1):+5.1f}%)" if x else "" for x in sums]
+    lines.append(f"  total {total:9.0f}      " + "  ".join(cols))
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -27,11 +49,19 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--power", type=float, default=1.0, help="fraction of rated power")
     ap.add_argument("--itc", action="store_true",
                     help="isothermal temperature coefficient at zero power, 560-570 K")  # fmt: skip
+    ap.add_argument("--bank", action="append", metavar="NAME[=STEPS]",
+                    help="insert a control rod bank (steps withdrawn, default 0 = fully in)")  # fmt: skip
+    ap.add_argument("--bank-worths", action="store_true",
+                    help="worth of each bank fully inserted, at zero power (inlet temperature)")  # fmt: skip
     args = ap.parse_args(argv)
     model = load_model(args.model)
+    banks = parse_banks(args.bank)
+    if args.bank_worths:
+        print(bank_worth_report(model, args.refine, args.axial))
+        return
     if args.itc:
         temps = (560.0, 565.0, 570.0)
-        ks = isothermal(model, temps, args.refine, args.axial)
+        ks = isothermal(model, temps, args.refine, args.axial, banks)
         for t, k in zip(temps, ks, strict=True):
             print(f"{model.name}: T = {t:.1f} K (fuel and water), k = {k:.6f}")
         itc = 1e5 * (1 / ks[0] - 1 / ks[-1]) / (temps[-1] - temps[0])
@@ -39,7 +69,14 @@ def main(argv: list[str] | None = None) -> None:
             f"  isothermal temperature coefficient: {itc:+.2f} pcm/K = {itc / 1.8:+.2f} pcm/F"
         )
         return
-    r = solve(model, args.refine, args.axial, power_level=args.power, verbose=True)
+    r = solve(
+        model,
+        args.refine,
+        args.axial,
+        power_level=args.power,
+        verbose=True,
+        banks=banks,
+    )
     mesh = r.mesh
     fuel = mesh.field(lambda x: x.nu_fission).sum(axis=0) > 0
     print(f"{model.name}: k = {r.k:.5f} after {len(r.history)} feedback iterations "
@@ -60,7 +97,10 @@ def main(argv: list[str] | None = None) -> None:
     print("  assembly powers (quarter core, centre top left):")
     for row in p:
         print("    " + " ".join("  .   " if np.isnan(x) else f"{x:6.3f}" for x in row))
-    axial = r.power.sum(axis=(1, 2))
+    power = r.power
+    if not power.any():  # zero power: the shape of the fission source instead
+        power = (mesh.field(lambda x: x.nu_fission) * r.flux).sum(axis=0) * v
+    axial = power.sum(axis=(1, 2))
     dz = mesh.widths[2]
     rows = axial > 0
     # power per cm, normalized to 1 over the fuel height (nodes differ in height)

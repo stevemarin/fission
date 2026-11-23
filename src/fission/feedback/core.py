@@ -85,16 +85,18 @@ def isothermal(
     temperatures: Sequence[float],
     refine: int = 1,
     axial: float | None = None,
+    banks: dict[str, float] | None = None,
 ) -> list[float]:
     """k of the core at zero power with fuel and water all at one
     temperature T (water density from IF97 at the core pressure, boron
     from the [core] state), for each T. The slope of the reactivity is the
     isothermal temperature coefficient that start-up tests measure. The
-    reflector keeps its fixed constants."""
+    reflector keeps its fixed constants. banks: control rods inserted
+    (bank -> steps withdrawn)."""
     core = model.core
     if core is None or core.thermal is None or core.state is None:
         raise ValueError("the core needs [core] state = ... and [core.thermal]")
-    base = core_mesh(model, refine, axial)
+    base = core_mesh(model, refine, axial, banks)
     boron = model.states[core.state].boron_ppm
     out = []
     for t in temperatures:
@@ -109,19 +111,37 @@ def isothermal(
     return out
 
 
+def bank_worths(model: Model, refine: int = 1, axial: float | None = None
+                ) -> tuple[float, dict[str, float]]:  # fmt: skip
+    """Worth (pcm) of each control rod bank of the model, fully inserted
+    alone, at zero power with fuel and water at the inlet temperature:
+    rho(all rods out) - rho(bank in). Returns (k all rods out, worths)."""
+    core = model.core
+    if core is None or core.banks is None or core.thermal is None:
+        raise ValueError("needs [core.banks] and [core.thermal]")
+    t = [core.thermal.inlet_temperature]
+    k_out = isothermal(model, t, refine, axial)[0]
+    worths = {}
+    for bank in core.banks.positions:
+        k_in = isothermal(model, t, refine, axial, {bank: 0.0})[0]
+        worths[bank] = 1e5 * (1 / k_in - 1 / k_out)
+    return k_out, worths
+
+
 def solve(model: Model, refine: int = 1, axial: float | None = None,
           tol_k: float = 1e-6, tol_t: float = 0.05, max_iterations: int = 50,
           relax: float = 1.0, power_level: float = 1.0, verbose: bool = False,
-          ) -> Result:  # fmt: skip
+          banks: dict[str, float] | None = None) -> Result:  # fmt: skip
     """Coupled NEM + thermal-hydraulics of the model's core at its
     operating conditions ([core] state and [core.thermal]); power_level
-    scales the rated power (the flow stays at its rated value)."""
+    scales the rated power (the flow stays at its rated value); banks:
+    control rods inserted (bank -> steps withdrawn)."""
     t0 = time.perf_counter()
     core = model.core
     if core is None or core.thermal is None or core.state is None:
         raise ValueError("the core needs [core] state = ... and [core.thermal]")
     th = core.thermal
-    base = core_mesh(model, refine, axial)
+    base = core_mesh(model, refine, axial, banks)
     state = model.states[core.state]
     shape = base.shape
     fuel_node = base.field(lambda x: x.nu_fission).sum(axis=0) > 0

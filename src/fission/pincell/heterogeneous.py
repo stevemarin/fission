@@ -190,6 +190,12 @@ def run(
     if moving_targets and shielding != "sd":
         raise ValueError("moving targets need shielding sd")
     moving = MOVING if moving_targets else ()
+    # materials the model marks shielded (absorber rods) join the fuel and clad
+    present = set(geometry.materials())
+    resonant = tuple(resonant) + tuple(
+        k for k, mat in m.materials.items()
+        if mat.shielded and k in present and k not in resonant
+    )  # fmt: skip
     if shielding != "none":
         sigma_p = {
             name: sum(d * potential_scattering(n) for n, d in dens.items())

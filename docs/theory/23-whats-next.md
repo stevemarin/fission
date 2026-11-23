@@ -36,10 +36,15 @@ remains.
 * **Burning the absorbers.** Chapter 22's Pyrex rods are as loaded. Their
   B-10 burns during the cycle, which needs depletion. Their worth is
   1.1–1.2% weaker than KENO's, and the rod gets no shielding of its own.
-* **Control rods.** They follow the Pyrex path: a lattice with absorber
-  rods in the guide tubes, their own state matrix, and an axial position
-  in the core map. Resonant absorbers such as silver, indium and cadmium
-  need their own shielding.
+* **Control rods, further.** Chapter 22's bank worths agree with KENO
+  within −7..+5% (total −1.7%). What is left out: a boron axis in the
+  tables, so that critical boron and the 1170 ppm of the rod-worth
+  measurements can be computed directly; a full-core (or rotational)
+  quarter, for banks SC and SD; and face-dependent discontinuity factors.
+  The reflector's factor belongs to its fuel face, but NEM applies it on
+  every face of the node, the outer vacuum face too. The axial mesh is
+  cut at every rod tip, so a partly inserted rod causes no cusping, at
+  the price of thin nodes.
 * **The remaining resonance formats.** LRF = 7 with an inelastic channel
   (Fe-57), Reich–Moore with negative channel spins (Mn-55, Cr-53) and the
   LRU = 2, LRF = 1 unresolved format (Fe-58) are still missing from the

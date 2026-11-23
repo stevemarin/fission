@@ -148,6 +148,8 @@ def test_toy_model_parses_all_layers():
         ({"materials__fuel__density": 10.0}, "not allowed together with atom_densities"),
         ({"states__hzp__boron_ppm": "1300"}, "expected a number, got a string"),
         ({"states__hzp__fuel_temperature": None}, "missing required key 'fuel_temperature'"),
+        ({"materials__fuel__shielded": "yes"}, "expected true or false, got a string"),
+        ({"core__banks": {"rod": "rcca", "map": "D"}}, "unknown control rod 'rcca'"),
     ],
 )  # fmt: skip
 def test_mistakes_are_reported_with_their_location(patch, message):

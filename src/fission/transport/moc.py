@@ -513,6 +513,67 @@ def surface_flux(problem: Problem, psi: np.ndarray) -> dict[str, np.ndarray]:
     return out
 
 
+def face_flux(solution: Solution, faces: list[int]) -> np.ndarray:
+    """Average scalar flux (per group) on cell faces inside the domain.
+
+    One more transport sweep from the converged state (Python reference;
+    it runs once per problem). A track of 2D direction d crosses a face of
+    normal n once per |d . n| / spacing of its length, in both directions
+    (forward and backward sweep), so
+
+        Int_face phi dl = sum over crossings of W psi / (sin theta |d . n|),
+
+    the same weights as ``surface_flux`` without its factor 2: an inside
+    face sees both halves of the sphere. faces are numbered as in
+    ``trace.Crossings``; returns shape (len(faces), groups).
+
+    Averaged over a line across the whole domain the count of crossings is
+    exact, as on the boundary. A single short face is not: at grazing
+    angles one crossing stands for spacing / |cos| of length, as much as
+    the face itself, so the split of a line between its faces is noisy
+    (~1% on 1.26 cm faces, not falling with the spacing).
+    """
+    p = solution.problem
+    if solution.psi is None:
+        raise ValueError("face_flux needs the boundary angular fluxes (Solution.psi)")
+    cross = p.crossings or crossings(p.geometry, p.tracks, p.segments)
+    sigma_t = p.per_region("total")
+    in_scatter = np.einsum("rgh,rg->rh", p.per_region("scatter"), solution.flux)
+    fission = (p.per_region("nu_fission") * solution.flux).sum(axis=1) / solution.k
+    ratio = (in_scatter + p.per_region("chi") * fission[:, None]) / FOUR_PI / sigma_t
+    t = p.tracks
+    phi_dir = np.array([a.phi for a in t.angles])[t.angle]
+    n_x = (p.geometry.nx + 1) * p.geometry.ny  # x-faces come first
+    index = {f: i for i, f in enumerate(faces)}
+    w = p.weights() / p.polar.sin[None, :]
+    inv_sin = 1.0 / p.polar.sin
+    out = np.zeros((len(faces), sigma_t.shape[1]))
+    for k in range(len(t)):
+        here = [c for c in range(cross.start[k], cross.start[k + 1])
+                if int(cross.face[c]) in index]  # fmt: skip
+        if not here:
+            continue
+        regions, lengths = p.segments.of(k)
+        n = len(regions)
+        for d, forward in enumerate((True, False)):
+            # flux at every position along the track (0 = start, n = end)
+            psi = solution.psi[k, d].copy()
+            along = [psi.copy()]
+            for j in range(n) if forward else range(n - 1, -1, -1):
+                r = regions[j]
+                tau = sigma_t[r][None, :] * (lengths[j] * inv_sin)[:, None]
+                psi -= (psi - ratio[r][None, :]) * -np.expm1(-tau)
+                along.append(psi.copy())
+            for c in here:
+                face, pos = int(cross.face[c]), int(cross.position[c])
+                at = along[pos] if forward else along[n - pos]
+                cosine = abs(np.cos(phi_dir[k]) if face < n_x else np.sin(phi_dir[k]))
+                out[index[face]] += (w[k] / cosine) @ at
+    pitch = np.where(np.array(faces) < n_x, t.height / p.geometry.ny,
+                     t.width / p.geometry.nx)  # fmt: skip
+    return out / pitch[:, None]
+
+
 def cell_flux(problem: Problem, flux: np.ndarray) -> np.ndarray:
     """Area-integrated flux of every lattice cell, shape (cells, groups)."""
     cell = problem.geometry.cell_of_regions()

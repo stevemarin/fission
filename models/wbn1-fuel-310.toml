@@ -3,7 +3,7 @@
 # itself (isotopics of Table P1-3). See wbn1-fuel-211.toml.
 
 [model]
-extends = "vera-p2-pyrex"   # vera-p2 + the Pyrex rod patterns of Figure 5
+extends = "vera-p2-rods"   # vera-p2 + Pyrex patterns (Figure 5) + control rods
 name = "WBN1 assembly, 3.1%"
 
 [branches.core]                     # no Pyrex
@@ -38,6 +38,24 @@ moderator_density = [0.661, 0.743]
 
 [branches.p24]
 lattice = "pyrex_24"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+# control rods: every guide tube rodded (an RCCA position of Figure 10).
+# The hybrid rod is Ag-In-Cd in its lower 101.6 cm and B4C above (Table 8),
+# so a rodded assembly needs both lattices.
+
+[branches.aic]
+lattice = "aic_24"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+[branches.b4c]
+lattice = "b4c_24"
 base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]

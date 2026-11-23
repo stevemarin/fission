@@ -186,3 +186,42 @@ def test_nem_warm_start_gives_the_same_answer():
     warm = nem.solve(mesh, start=cold)
     assert warm.k == pytest.approx(cold.k, abs=2e-7)
     assert warm.iterations < cold.iterations
+
+
+def test_control_rod_banks_cut_the_stacks():
+    """wbn1-rods: 57 RCCAs in the full core; a bank inserted splits its
+    assemblies at the absorber zones and uses the rodded lattices."""
+    from fission.nodal.mesh import stacks
+
+    m = load_model("wbn1-rods")
+    banks = m.core.banks
+    full = sum(
+        1 if (r, c) == (0, 0) else 2 if 0 in (r, c) else 4
+        for cells in banks.positions.values()
+        for r, c in cells
+    )
+    assert full == 57
+    out = stacks(m)  # all rods out: the stacks of the assemblies
+    assert out[0, 0] == m.assemblies["a"].segments
+    rod = m.control_rods["rcca"]
+    for steps in (0, 100):
+        segs = stacks(m, {"D": steps})[0, 0]
+        assert sum(s.height for s in segs) == pytest.approx(m.assemblies["a"].height)
+        names = [s.lattice for s in segs]
+        assert names == [
+            "reflector",
+            "fuel_211",
+            "fuel_211_aic",
+            "fuel_211_b4c",
+            "reflector",
+        ]
+        assert segs[1].height == pytest.approx(rod.bottom - 21.5 + steps * rod.step)
+        assert segs[2].height == pytest.approx(101.6)
+    # fully inserted, the B4C ends at the top of the fuel
+    assert stacks(m, {"D": 0})[0, 0][3].height == pytest.approx(259.08)
+    # fully withdrawn: the tip is in the upper reflector, nothing rodded
+    assert stacks(m, {"D": rod.steps})[0, 0] == m.assemblies["a"].segments
+    # other banks' positions are untouched
+    assert stacks(m, {"D": 0})[0, 2] == m.assemblies["a"].segments
+    with pytest.raises(ValueError, match="no bank"):
+        stacks(m, {"X": 0})
