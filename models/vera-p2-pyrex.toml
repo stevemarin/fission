@@ -1,0 +1,216 @@
+# VERA problem 2 with Pyrex burnable absorbers: cases 2E (12 rods) and 2F
+# (24 rods), and every rod pattern of Figure 5 for the Watts Bar core.
+#
+# Source: CASL-U-2012-0131-004 Rev. 4 (free:
+# https://corephysics.com/docs/CASL-U-2012-0131-004.pdf)
+#   Table 6     Pyrex rod geometry: SS304 inner tube 0.214-0.231 cm, helium,
+#               Pyrex 0.241-0.427 cm, helium, SS304 clad 0.437-0.484 cm
+#               (the rod sits in a guide tube, water inside and outside)
+#   Table 7     Pyrex isotopics (12.5 wt% B2O3 in SiO2, 2.25 g/cc)
+#   Figure 5    rod patterns (octant symmetry); Figure P2-2: 2E = 12, 2F = 24
+#   Table P2-1  2E, 2F: fuel and water at 600 K, water 0.743 g/cc, 1300 ppm
+#   Table P2-4  Pyrex and SS304 number densities
+#   Table P2-5  CE KENO-VI reference eigenvalues
+# The inner tube holds helium (Table 6: "plenum material"), at the gap's
+# nominal density. C, P, Mn-55, Cr-53, Fe-57 and Fe-58 of the steel are left
+# out by the transport code (resonance formats not supported yet).
+
+[model]
+extends = "vera-p2"
+name = "VERA problem 2, Pyrex"
+description = "Westinghouse 17x17 lattice with Pyrex burnable absorber rods"
+
+[materials.pyrex]                   # Table P2-4
+temperature = "moderator"
+[materials.pyrex.atom_densities]
+B10 = 9.63266e-04
+B11 = 3.90172e-03
+O16 = 4.67761e-02
+Si28 = 1.81980e-02
+Si29 = 9.24474e-04
+Si30 = 6.10133e-04
+
+[materials.ss304]                   # Table P2-4
+temperature = "moderator"
+[materials.ss304.atom_densities]
+C12 = 3.20895e-04                   # natural carbon in the table (6000)
+Si28 = 1.58197e-03
+Si29 = 8.03653e-05
+Si30 = 5.30394e-05
+P31 = 6.99938e-05
+Cr50 = 7.64915e-04
+Cr52 = 1.47506e-02
+Cr53 = 1.67260e-03
+Cr54 = 4.16346e-04
+Mn55 = 1.75387e-03
+Fe54 = 3.44776e-03
+Fe56 = 5.41225e-02
+Fe57 = 1.24992e-03
+Fe58 = 1.66342e-04
+Ni58 = 5.30854e-03
+Ni60 = 2.04484e-03
+Ni61 = 8.88879e-05
+Ni62 = 2.83413e-04
+Ni64 = 7.21770e-05
+
+[pins.pyrex_rod]                    # Table 6, in a guide tube (Table 2)
+radii = [0.214, 0.231, 0.241, 0.427, 0.437, 0.484, 0.561, 0.602]
+materials = ["gap", "ss304", "gap", "pyrex", "gap", "ss304", "moderator", "clad", "moderator"]
+
+[lattices.pyrex_4]                # Figure 5: 4 absorber rods
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", G = "guide_tube", I = "instrument_tube", P = "pyrex_rod" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F G F F G F F G F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F F F F F F F F F F F F F
+F F G F F G F F G F F G F F G F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F G F F G F F I F F G F F G F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F G F F G F F G F F G F F G F F
+F F F F F F F F F F F F F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F G F F G F F G F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[lattices.pyrex_8]                # Figure 5: 8 absorber rods
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", G = "guide_tube", I = "instrument_tube", P = "pyrex_rod" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F G F F G F F G F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F F F F F F F F F F F F F
+F F G F F G F F P F F G F F G F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F G F F P F F I F F P F F G F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F G F F G F F P F F G F F G F F
+F F F F F F F F F F F F F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F G F F G F F G F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[lattices.pyrex_12]                # Figure 5: 12 absorber rods
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", G = "guide_tube", I = "instrument_tube", P = "pyrex_rod" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F P F F G F F P F F F F F
+F F F G F F F F F F F F F G F F F
+F F F F F F F F F F F F F F F F F
+F F P F F G F F P F F G F F P F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F G F F P F F I F F P F F G F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F P F F G F F P F F G F F P F F
+F F F F F F F F F F F F F F F F F
+F F F G F F F F F F F F F G F F F
+F F F F F P F F G F F P F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[lattices.pyrex_16]                # Figure 5: 16 absorber rods
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", G = "guide_tube", I = "instrument_tube", P = "pyrex_rod" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F P F F G F F P F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F F F F F F F F F F F F F
+F F P F F G F F P F F G F F P F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F G F F P F F I F F P F F G F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F P F F G F F P F F G F F P F F
+F F F F F F F F F F F F F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F P F F G F F P F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[lattices.pyrex_20]                # Figure 5: 20 absorber rods
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", G = "guide_tube", I = "instrument_tube", P = "pyrex_rod" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F P F F P F F P F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F F F F F F F F F F F F F
+F F P F F G F F P F F G F F P F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F P F F P F F I F F P F F P F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F P F F G F F P F F G F F P F F
+F F F F F F F F F F F F F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F P F F P F F P F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[lattices.pyrex_24]                # Figure 5: 24 absorber rods
+pitch = 1.26
+gap = 0.04
+legend = { F = "fuel_rod", G = "guide_tube", I = "instrument_tube", P = "pyrex_rod" }
+map = """
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F P F F P F F P F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F F F F F F F F F F F F F
+F F P F F P F F P F F P F F P F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F P F F P F F I F F P F F P F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+F F P F F P F F P F F P F F P F F
+F F F F F F F F F F F F F F F F F
+F F F P F F F F F F F F F P F F F
+F F F F F P F F P F F P F F F F F
+F F F F F F F F F F F F F F F F F
+F F F F F F F F F F F F F F F F F
+"""
+
+[states.2E]
+fuel_temperature = 600.0
+moderator_temperature = 600.0
+moderator_density = 0.743
+boron_ppm = 1300
+reference = { keff = 1.069627, sigma = 0.000024, source = "Table P2-5: CE KENO-VI, ENDF/B-VII.0, 12 Pyrex (lattice pyrex_12)" }
+
+[states.2F]
+fuel_temperature = 600.0
+moderator_temperature = 600.0
+moderator_density = 0.743
+boron_ppm = 1300
+reference = { keff = 0.976018, sigma = 0.000026, source = "Table P2-5: CE KENO-VI, ENDF/B-VII.0, 24 Pyrex (lattice pyrex_24)" }

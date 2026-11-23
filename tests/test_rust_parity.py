@@ -294,3 +294,28 @@ def test_slowing_down_march_moving_targets(regions):
     np.testing.assert_allclose(lv_rs, lv_py, rtol=1e-12, atol=0)
     rest = march(**kw, share=0.05, use_rust=True)
     assert np.max(np.abs(py / rest - 1)) > 1e-3  # the kernel really acts
+
+
+@pytest.mark.parametrize("shape", [(3, 4, 5), (64, 40, 40)])  # one thread, several
+def test_diffusion_sweeps(shape):
+    """Red-black SOR sweeps of the nodal diffusion operator: Rust equals the
+    Python reference bit for bit (the threaded path too: a colour's nodes are
+    independent)."""
+    from fission.nodal.diffusion import _rust_sweeps, _sweep
+
+    rng = np.random.default_rng(7)
+    inside = rng.random(shape) > 0.1
+    diag = np.where(inside, rng.uniform(2.0, 3.0, shape), 1.0)
+    coef = [tuple(np.where(inside, rng.uniform(0.0, 0.4, shape), 0.0) for _ in range(2))
+            for _ in range(3)]  # fmt: skip
+    b = np.where(inside, rng.uniform(0.0, 1.0, shape), 0.0)
+    phi0 = np.where(inside, rng.uniform(0.5, 1.5, shape), 0.0)
+    nz, ny, nx = shape
+    zz, yy, xx = np.meshgrid(range(nz), range(ny), range(nx), indexing="ij")
+    colours = [((zz + yy + xx) % 2 == p) & inside for p in (0, 1)]
+    ref = phi0.copy()
+    for _ in range(3):
+        for colour in colours:
+            _sweep(diag, coef, b, ref, colour, 1.7)
+    out = _rust_sweeps(diag, coef, inside, b, phi0.copy(), 3, 1.7)
+    np.testing.assert_array_equal(out, ref)

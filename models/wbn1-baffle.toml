@@ -1,0 +1,54 @@
+# Radial reflector of Watts Bar Unit 1 for reflector constants (M4b): a slab
+# of 17 cells of 3.1% VERA fuel (the outermost assemblies of WBN1 are 3.1%),
+# the stainless-steel baffle, and water up to one assembly width.
+#
+# Source: CASL-U-2012-0131-004 Rev. 4 (free:
+# https://corephysics.com/docs/CASL-U-2012-0131-004.pdf): baffle SS304,
+# 2.85 cm thick, 0.19 cm from the fuel (Table 16); a 21.5 cm reflector
+# region with the baffle in it (problem 5 notes); SS304 number densities
+# (Table P3-3).
+#
+# Approximations: the slab is made of 1.26 cm cells, so the baffle is two
+# cells of steel (2.52 cm) with its density raised by 2.85 / 2.52 = 1.13095
+# (the same steel per unit area), the 0.19 cm water gap is left out, and
+# 15 water cells (18.9 cm) follow. Natural carbon is taken as C-12. The
+# transport code leaves out the nuclides whose resonance formats it cannot
+# read yet: Mn-55 and Cr-53 (Reich-Moore with negative J), Fe-57 (LRF = 7
+# with an inelastic channel), Fe-58 (unresolved LRF = 1); the baffle
+# therefore absorbs somewhat too little.
+
+[model]
+extends = "vera-p1"
+name = "WBN1 baffle reflector slab"
+
+[materials.baffle]                  # SS304 (Table P3-3) x 1.13095, all 19 nuclides
+temperature = "moderator"
+[materials.baffle.atom_densities]
+C12 = 3.62917e-04
+Si28 = 1.78913e-03
+Si29 = 9.08893e-05
+Si30 = 5.99850e-05
+P31 = 7.91597e-05
+Cr50 = 8.65083e-04
+Cr52 = 1.66822e-02
+Cr53 = 1.89163e-03
+Cr54 = 4.70868e-04
+Mn55 = 1.98354e-03
+Fe54 = 3.89925e-03
+Fe56 = 6.12100e-02
+Fe57 = 1.41360e-03
+Fe58 = 1.88125e-04
+Ni58 = 6.00371e-03
+Ni60 = 2.31262e-03
+Ni61 = 1.00528e-04
+Ni62 = 3.20527e-04
+Ni64 = 8.16290e-05
+
+[pins.steel]
+radii = []
+materials = ["baffle"]
+
+[lattices.baffle_reflector]
+pitch = 1.26
+legend = { F = "fuel_rod", S = "steel", W = "water" }
+map = "F F F F F F F F F F F F F F F F F S S W W W W W W W W W W W W W W W"

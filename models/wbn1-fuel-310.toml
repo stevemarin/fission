@@ -1,0 +1,44 @@
+# A Watts Bar Unit 1 cycle 1 fuel assembly type: the VERA problem 2 lattice
+# (17x17, guide tubes) with 3.10 wt% U-235, which is problem 2
+# itself (isotopics of Table P1-3). See wbn1-fuel-211.toml.
+
+[model]
+extends = "vera-p2-pyrex"   # vera-p2 + the Pyrex rod patterns of Figure 5
+name = "WBN1 assembly, 3.1%"
+
+[branches.core]                     # no Pyrex
+lattice = "assembly"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+# the same matrix for every Pyrex pattern this enrichment has in WBN1 (Figure 9)
+
+[branches.p8]
+lattice = "pyrex_8"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+[branches.p12]
+lattice = "pyrex_12"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+[branches.p16]
+lattice = "pyrex_16"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]
+
+[branches.p24]
+lattice = "pyrex_24"
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]

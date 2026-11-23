@@ -320,9 +320,9 @@ class Geometry:
                 materials.append(pin.materials[-1])
             materials.append(pin.materials[-1])
             meshes[name] = CellMesh(tuple(radii), tuple(materials), sectors)
-        n = len(lat.pins)
+        ny, nx = len(lat.pins), len(lat.pins[0])
         # model maps list rows from the top; cells count from the bottom
         cells = tuple(
-            meshes[lat.pins[n - 1 - iy][ix]] for iy in range(n) for ix in range(n)
+            meshes[lat.pins[ny - 1 - iy][ix]] for iy in range(ny) for ix in range(nx)
         )
-        return cls(lat.pitch, n, n, cells, lat.gap)
+        return cls(lat.pitch, nx, ny, cells, lat.gap)

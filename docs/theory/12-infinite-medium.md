@@ -36,7 +36,9 @@ because they have different temperatures and scattering laws.
 Four isotopes of the cladding are left out: Fe-54 and Fe-57 use the
 R-matrix-limited resonance format (LRF = 7), Fe-58 an unresolved-range form,
 and Cr-53 a channel-spin convention that this code does not process yet.
-Together they are 0.04% of the cladding atoms. Everything else, 35
+Together they are 0.04% of the cladding atoms. (Chapter 6 later added
+LRF = 7 and brought Fe-54 in. The numbers in this and the following chapters
+were computed without it.) Everything else, 35
 components from 34 nuclides, is processed from ENDF/B-VIII.1 at the
 problem's temperatures, with S(α,β) for hydrogen in water. The geometry,
 compositions and states are read from the model file of chapter 13.

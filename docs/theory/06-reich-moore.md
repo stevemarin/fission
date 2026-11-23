@@ -297,6 +297,94 @@ weight is resonant, so each contributes $(4\pi/k^2)(2l+1)\sin^2\varphi_l$. At lo
 energy these terms are tiny ($\sin^2\varphi_l \propto \hat\rho^{4l+2}$), but they
 grow in the keV range.
 
+## The general format: R-Matrix Limited (LRF = 7)
+
+LRF = 3 hides much of R-matrix theory behind conventions. There is one neutron
+channel per $(l, J)$. Two channel spins of a target with spin are merged. Two
+fission channels are allowed, and potential scattering comes from NLSC. Modern
+evaluations, done with codes such as SAMMY, are written in the **R-Matrix
+Limited** format instead [[ENDF-102](#ref-endf102) §2.2.1.6], which states
+everything explicitly. ENDF/B-VIII.1 uses it for silicon (Si-28, 29, 30) and
+for Fe-54 and Fe-57: the nuclides of the steel and the Pyrex glass of
+chapter 22.
+
+The file first lists **particle pairs**: the two particles a channel holds,
+with their masses, spins, charges, Q-value and the MT the pair stands for.
+For neutrons there are always at least two pairs: γ + compound nucleus
+(MT = 102) and n + target in its ground state (MT = 2). Fe-57 adds a third,
+n + Fe-57 in its first excited state (MT = 51, Q = −14.4 keV), an inelastic
+channel. Then come the **spin groups**, one per total spin and parity
+$J^\pi$, the only quantities R-matrix theory conserves. Each spin group
+lists its channels (pair, $l$, channel spin $s$, and two radii: APE for the
+phase shift, APT for the penetrability) and its levels, each with one width
+per channel. Si-28 (target spin 0) has seven spin groups, $J^\pi$ from
+$\tfrac12^+$ ($l = 0$) to $\tfrac72^-$ ($l = 3$). Si-29 has spin $\tfrac12$,
+so a neutron can arrive with channel spin $s = 0$ or $1$, and the file keeps
+them apart: two separate $1^-$ groups, one for each $s$. LRF = 3 has no
+place for that distinction; it is the convention with negative $J$ that
+still stops Cr-53 and Mn-55 here.
+
+The flag KRM says which approximation of R-matrix theory the parameters
+belong to. All five files use KRM = 3, Reich–Moore: the γ pair is the
+eliminated channel, and its widths only appear as $-i\Gamma_{\lambda\gamma}/2$
+in the level denominators. ENDF-102 (D.44–D.54) writes the cross sections
+through $X = P^{1/2}L^{-1}(L^{-1}-R)^{-1}RP^{1/2}$, with the shift factors in
+$L = S - B + iP$. None of our files asks for shift factors (SHF = 0), so
+$L = iP$. With widths given at the level energies (IFG = 0), the energy-dependent
+amplitude of level $\lambda$ in channel $c$ is
+
+$$
+a_{\lambda c}(E) = \operatorname{sign}(\Gamma_{\lambda c})\sqrt{|\Gamma_{\lambda c}|\,P_c(E)/P_c(|E_\lambda|)}
+$$
+
+and everything reduces to the matrix $K$ of this chapter, now with one row per
+neutron channel of the group:
+
+$$
+K_{cc'} = \frac{i}{2}\sum_\lambda \frac{a_{\lambda c}\,a_{\lambda c'}}{E_\lambda - E - i\Gamma_{\lambda\gamma}/2},
+\qquad
+U_{cc'} = e^{-i\varphi_c}\big(2[(1-K)^{-1}]_{cc'} - \delta_{cc'}\big)e^{-i\varphi_{c'}} .
+$$
+
+For every incident neutron channel $c$ the elastic cross section sums over the
+outgoing neutron channels, $(\pi/k^2)g_J\sum_{c'}|\delta_{cc'} - U_{cc'}|^2$.
+With two channel spins, a neutron can arrive with $s = 0$ and leave with
+$s = 1$, which LRF = 3 cannot express. Capture is again the flux the levels
+lose through their eliminated widths, computed directly. Potential
+scattering needs no NLSC: every $(l, s, J)$ the evaluator wants is listed,
+and a channel without levels gives $U = e^{-2i\varphi}$, so
+$|1 - U|^2 = 4\sin^2\varphi$.
+
+`endf/rml.py` implements this (in Python only: Si-28 has 55 levels and
+Fe-54 737, so the reconstruction takes seconds). It refuses what it does not
+do: other pairs than γ and n + target (Fe-57's inelastic pair), shift
+factors, reduced-width input (IFG = 1) and other KRM. Three checks:
+
+* **The same levels in both formats.** A test writes a few levels (two
+  interfering s-wave levels, a bound level, a p-wave level, and an empty
+  $(l = 1, J = \tfrac32)$ group) once as LRF = 3 and once as LRF = 7. The
+  cross sections agree to $10^{-12}$. The empty group's potential scattering
+  comes from NLSC in one format and from a listed channel in the other.
+* **Unitarity.** Elastic + capture equals the total from the optical theorem,
+  $(2\pi/k^2)g_J\sum_c(1 - \operatorname{Re}U_{cc})$, to $10^{-12}$ in the
+  keV range. At thermal energies it is $10^{-9}$, because there the optical
+  form subtracts two nearly equal numbers.
+* **NJOY.** NJOY 2016.78 RECONR on the same files: at NJOY's grid points our
+  elastic and capture agree to at most $5\times10^{-7}$, the precision of
+  NJOY's printed numbers. At 0.0253 eV:
+
+| | elastic (b) | capture (b) |
+| --- | --- | --- |
+| Si-28 | 1.8945 | 0.186175 |
+| Si-29 | 2.72193 | 0.119011 |
+| Si-30 | 2.44922 | 0.107474 |
+| Fe-54 | 2.1216 | 2.25323 |
+
+  (both codes, to every printed digit). One difference is deliberate. Between
+  two Fe-54 levels near 3.5 keV, the evaluation's resonance elastic plus its
+  MF3 background dips to $-7\times10^{-5}$ b over a few eV. NJOY replaces
+  negative values by $10^{-8}$ b; our table keeps the evaluated sum.
+
 ## Cost
 
 Each energy requires, for every spin group, a sum over all its resonances to

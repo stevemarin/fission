@@ -6,6 +6,7 @@
 pub mod channel;
 pub mod cmfd;
 pub mod complex;
+pub mod diffusion;
 pub mod doppler;
 pub mod fsum;
 pub mod gauss;
@@ -690,6 +691,43 @@ fn cmfd_solve<'py>(
     Ok((k, phi.into_pyarray(py), outer))
 }
 
+/// Red-black SOR sweeps of the nodal diffusion operator for one group (port
+/// of `fission.nodal.diffusion._sweep`, `count` times both colours). Arrays
+/// are flattened [nz, ny, nx]; coef = x lower, x upper, y lower, y upper,
+/// z lower, z upper. Returns the new flux.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn diffusion_sweeps<'py>(
+    py: Python<'py>,
+    nz: usize,
+    ny: usize,
+    nx: usize,
+    diag: PyReadonlyArray1<'py, f64>,
+    coef: [PyReadonlyArray1<'py, f64>; 6],
+    inside: PyReadonlyArray1<'py, u8>,
+    b: PyReadonlyArray1<'py, f64>,
+    phi: PyReadonlyArray1<'py, f64>,
+    count: usize,
+    omega: f64,
+) -> PyResult<Array<'py>> {
+    let n = nz * ny * nx;
+    let c: Vec<&[f64]> = coef.iter().map(|a| a.as_slice()).collect::<Result<_, _>>()?;
+    let (diag, inside, b) = (diag.as_slice()?, inside.as_slice()?, b.as_slice()?);
+    let mut phi = phi.as_slice()?.to_vec();
+    let lengths = [diag.len(), inside.len(), b.len(), phi.len()];
+    if lengths.iter().copied().chain(c.iter().map(|a| a.len())).any(|l| l != n) {
+        return Err(pyo3::exceptions::PyValueError::new_err("arrays must have nz * ny * nx entries"));
+    }
+    let grid = diffusion::Grid { nz, ny, nx };
+    let op = diffusion::Operator {
+        diag,
+        coef: [(c[0], c[1]), (c[2], c[3]), (c[4], c[5])],
+        inside,
+    };
+    py.detach(|| diffusion::sweeps(&grid, &op, b, &mut phi, count, omega));
+    Ok(phi.into_pyarray(py))
+}
+
 /// Ultra-fine slowing-down march of R regions (`shielding.march`).
 /// Returns (psi flattened (n, R), psi_M (n)).
 
@@ -932,6 +970,7 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(trace_tracks, m)?)?;
     m.add_function(wrap_pyfunction!(moc_sweep, m)?)?;
     m.add_function(wrap_pyfunction!(cmfd_solve, m)?)?;
+    m.add_function(wrap_pyfunction!(diffusion_sweeps, m)?)?;
     m.add_function(wrap_pyfunction!(slowing_down_march, m)?)?;
     m.add_function(wrap_pyfunction!(free_gas_kernel, m)?)?;
     m.add_function(wrap_pyfunction!(group_hat_integrals, m)?)?;

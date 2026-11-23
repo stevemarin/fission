@@ -20,6 +20,7 @@ since for LRP = 1 the file splits the cross section into those two parts.
 from __future__ import annotations
 
 import bisect
+import functools
 import math
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
@@ -27,7 +28,8 @@ from dataclasses import dataclass
 from .evaluation import Evaluation
 from .mlbw import mlbw
 from .reich_moore import reich_moore
-from .resonances import ResolvedRange
+from .resonances import ResolvedRange, RMLRange
+from .rml import RMatrixLimited, levels_of
 from .slbw import ResonanceXS, single_resonance, slbw
 
 REACTIONS = ("elastic", "capture", "fission")
@@ -78,7 +80,7 @@ class PointwiseXS:
 
 
 def seed_grid(
-    rr: ResolvedRange, lo: float, hi: float, extra: Sequence[float] = ()
+    rr: ResolvedRange | RMLRange, lo: float, hi: float, extra: Sequence[float] = ()
 ) -> list[float]:
     """Starting energies: resonance peaks and half-widths, decades, extras."""
     points = {lo, hi, *(e for e in extra if lo < e < hi)}
@@ -89,15 +91,23 @@ def seed_grid(
             if lo < e < hi:
                 points.add(e)
         decade *= 10
-    for group in rr.groups:
-        for res in group.resonances:
-            if not lo < res.energy < hi:
-                continue
-            width = single_resonance(rr, group, res, res.energy).width
-            for offset in (-3.0, -0.5, 0.0, 0.5, 3.0):
-                e = res.energy + offset * width
-                if lo < e < hi:
-                    points.add(e)
+    levels: list[tuple[float, float]] = []  # (energy, total width)
+    if isinstance(rr, RMLRange):
+        for sg in rr.groups:
+            levels += levels_of(sg)
+    else:
+        for group in rr.groups:
+            for res in group.resonances:
+                if lo < res.energy < hi:
+                    width = single_resonance(rr, group, res, res.energy).width
+                    levels.append((res.energy, width))
+    for energy, width in levels:
+        if not lo < energy < hi:
+            continue
+        for offset in (-3.0, -0.5, 0.0, 0.5, 3.0):
+            e = energy + offset * width
+            if lo < e < hi:
+                points.add(e)
     return sorted(points)
 
 
@@ -146,21 +156,25 @@ def adaptive_grid(
 def resolved_range_xs(
     ev: Evaluation,
     formalism: Callable[[ResolvedRange, float], ResonanceXS] | None = None,
-) -> tuple[ResolvedRange, Callable[[float], Values]]:
+) -> tuple[ResolvedRange | RMLRange, Callable[[float], Values]]:
     """sigma(E) = resonance part + MF3 background, for each reaction."""
     (iso,) = ev.resonances
     rr = iso.resolved
     if rr is None:
         raise ValueError("no resolved resonance range")
-    if formalism is None:
-        formalism = {1: slbw, 2: mlbw, 3: reich_moore}[rr.lrf]
+    resonance: Callable[[float], ResonanceXS]
+    if isinstance(rr, RMLRange):
+        resonance = RMatrixLimited(rr)
+    else:
+        model = formalism or {1: slbw, 2: mlbw, 3: reich_moore}[rr.lrf]
+        resonance = functools.partial(model, rr)
     backgrounds = {
         name: ev.cross_section(mt) if mt in ev.reactions else None
         for name, mt in BACKGROUND_MT.items()
     }
 
     def f(energy: float) -> Values:
-        xs = formalism(rr, energy)
+        xs = resonance(energy)
         out = []
         for name in REACTIONS:
             bg = backgrounds[name]

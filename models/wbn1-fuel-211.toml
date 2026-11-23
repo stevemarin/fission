@@ -1,0 +1,22 @@
+# A Watts Bar Unit 1 cycle 1 fuel assembly type: the VERA problem 2 lattice
+# (17x17, guide tubes, no poisons) with 2.11 wt% U-235.
+#
+# Source: CASL-U-2012-0131-004 Rev. 4 (free:
+# https://corephysics.com/docs/CASL-U-2012-0131-004.pdf), section 2.1: the
+# enrichments 2.11, 2.619 and 3.10 of the three WBN1 regions, and the
+# isotopics of Table 17 (U-234 = 0.007731 w^1.0837, U-236 = 0.0046 w,
+# U-238 the balance, w in weight percent). Everything else is problem 2.
+# The state matrix (M2) is the one a core at 1300 ppm needs (chapter 22).
+
+[model]
+extends = "vera-p2"
+name = "WBN1 assembly, 2.11%"
+
+[materials.fuel]
+weight_percent.U = { U234 = 0.01736, U235 = 2.11, U236 = 0.00971, U238 = 97.86293 }
+
+[branches.core]
+base = "2B"
+fuel_temperature = [600.0, 900.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]

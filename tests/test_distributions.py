@@ -75,6 +75,14 @@ def test_bracket_laws_and_edges():
     assert grid.bracket(9.0).t == 1.0
 
 
+def test_corresponding_points_are_unit_base():
+    """INT = 12 (corresponding points) is read as unit base with one bin:
+    the same bracket as INT = 22."""
+    a = IncidentGrid.from_tab2([1.0, 2.0, 4.0], [3], [12]).bracket(3.0)
+    b = IncidentGrid.from_tab2([1.0, 2.0, 4.0], [3], [22]).bracket(3.0)
+    assert a == b and a.unit_base and a.t == 0.5
+
+
 def test_unit_base_keeps_normalization_where_cartesian_does_not():
     p1 = Panel((0.0, 1.0, 2.0), (0.0, 1.0, 0.0))  # triangle on [0, 2]
     p2 = Panel((0.0, 2.0, 4.0), (0.0, 0.5, 0.0))  # triangle on [0, 4]

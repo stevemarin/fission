@@ -1,0 +1,92 @@
+# An illustrative PWR core at hot full power (M4b): the shape and operating
+# conditions of Watts Bar Unit 1, loaded entirely with the VERA problem 1
+# fuel (3.1% UO2) and surrounded by water.
+#
+# Not a VERA benchmark: the real core has three enrichments, Pyrex
+# burnable absorbers, guide tubes and a steel baffle (VERA problem 5). Here
+# every fuel node uses the few-group table of the VERA 1 pin cell (chapter
+# 20, M3: `make branches BRANCHES=core` with the MOC solver, then
+# `python -m fission.tables core --solver moc`), and every reflector node the
+# water table of the fuel-reflector slab (`make reflector`).
+#
+# Source of the numbers: CASL-U-2012-0131-004 Rev. 4, VERA Core Physics
+# Benchmark Progression Problem Specifications:
+#   core loading pattern, quarter symmetry: Figure 9 (row lengths only);
+#   assembly pitch 21.50 cm, 264 rods, rod radii, fuel stack 365.76 cm:
+#     sections 1.1-1.3, Table 1;
+#   assembly power 17.67 MW, flow 0.6823 Mlb/hr, inlet 565 K, 2250 psia,
+#     1300 ppm boron: Table P6-1 (the WBN1 average assembly);
+#   fraction of the heat generated in the fuel 97.4%: Table 18;
+#   radial reflector 21.5 cm of moderator, "same as fuel assembly": the
+#     problem 5 notes.
+# Conversions: 0.6823e6 lb/hr x 0.45359237 kg/lb / 3600 s = 85.968 kg/s;
+# 2250 psi x 6894.757293168 Pa/psi = 15.5132 MPa.
+# Our assumptions: 21.5 cm of water below and above the fuel stack (the
+# nozzles and core plates are left out); the gap conductance 1e4 W/(m^2 K)
+# of the OECD/NEA PWR MOX/UO2 transient benchmark (fuel.py).
+
+[model]
+format = 1
+name = "WBN1-shaped core, VERA 1 fuel"
+
+[materials.fuel]
+temperature = "fuel"
+table = "vera-p1-core-moc"
+
+[materials.reflector]
+table = "vera-p1-reflector"
+
+[lattices.fuel]
+material = "fuel"
+[lattices.reflector]
+material = "reflector"
+
+[assemblies.fuel]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel", height = 365.76 },
+         { lattice = "reflector", height = 21.5 }]
+[assemblies.reflector]
+axial = [{ lattice = "reflector", height = 408.76 }]
+
+[core]
+assembly_pitch = 21.50
+symmetry = "quarter"
+state = "hfp"
+legend = { F = "fuel", R = "reflector" }
+map = """
+F F F F F F F F R
+F F F F F F F F R
+F F F F F F F F R
+F F F F F F F F R
+F F F F F F F R R
+F F F F F F F R .
+F F F F F F R R .
+F F F F R R R . .
+R R R R R . . . .
+"""
+
+[core.thermal]
+assembly_power = 17.67e6        # W
+assembly_flow = 85.968          # kg/s
+inlet_temperature = 565.0       # K
+pressure = 15.5132e6            # Pa
+fuel_heat_fraction = 0.974
+rods = 264
+pellet_radius = 0.4096          # cm
+clad_inner = 0.418
+clad_outer = 0.475
+gap_conductance = 1.0e4         # W/(m^2 K)
+# Clad-to-water heat transfer (Dittus-Boelter, feedback/convection.py). Flow
+# area of an assembly: the 21.50 cm square minus 264 rods (r = 0.475 cm), 24
+# guide tubes (0.602 cm) and the instrument tube (0.605 cm) (VERA Tables 1-2,
+# models/vera-p2.toml) = 246.65 cm^2; wetted perimeter 2 pi (264 x 0.475 +
+# 24 x 0.602 + 0.605) cm; hydraulic diameter 4 A / P = 1.1180 cm.
+rod_pitch = 1.26                # cm
+flow_area = 246.65              # cm^2
+hydraulic_diameter = 1.1180     # cm
+
+# Boron of Table P6-1; the temperatures only start the iteration.
+[states.hfp]
+fuel_temperature = 900.0
+moderator_temperature = 565.0
+moderator_density = 0.743
+boron_ppm = 1300

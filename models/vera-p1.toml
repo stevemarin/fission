@@ -79,11 +79,25 @@ thermal = { H1 = "HinH2O" }         # S(alpha, beta) of hydrogen in water
 radii = [0.4096, 0.418, 0.475]      # pellet, clad inner, clad outer
 materials = ["fuel", "gap", "clad", "moderator"]
 
+[pins.water]                        # a cell of moderator only (reflector)
+radii = []
+materials = ["moderator"]
+
 # ---------------------------------------------------------------- lattices
 [lattices.cell]                     # a single cell; reflective boundaries make it infinite
 pitch = 1.26
 legend = { F = "fuel_rod" }
 map = "F"
+
+# A fuel-reflector slab for reflector constants (M4b): one row of 17 fuel
+# cells (one assembly width, 21.42 cm) and 17 water cells. With reflective
+# sides it repeats as fuel | water | water | fuel ..., so the water between
+# two fuel slabs is 42.84 cm thick. Not a VERA problem; only the cell and
+# the materials are from the specification.
+[lattices.reflector]
+pitch = 1.26
+legend = { F = "fuel_rod", W = "water" }
+map = "F F F F F F F F F F F F F F F F F W W W W W W W W W W W W W W W W W"
 
 # ---------------------------------------------------------------- states (Tables P1-1, P1-5)
 # 1A is hot zero power. 1B-1D: 600 K water, fuel at 600, 900, 1200 K.
@@ -126,3 +140,11 @@ fuel_temperature = [565.0, 600.0, 900.0, 1200.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
 boron_ppm = [0.0, 1300.0, 2000.0]
+
+# The part of the matrix a core at fixed boron needs (M4b, models/wbn1-core):
+# 12 points, cheap enough for the heterogeneous MOC solver.
+[branches.core]
+base = "1B"
+fuel_temperature = [600.0, 900.0, 1200.0]
+moderator_temperature = [565.0, 600.0]
+moderator_density = [0.661, 0.743]

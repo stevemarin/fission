@@ -142,6 +142,7 @@ def run(
     coupled_clad: bool = False,
     moving_targets: bool = False,
     verbose: bool = False,
+    cmfd: bool = True,
 ) -> Result:
     """k-infinity of a model pin cell with MOC.
 
@@ -296,7 +297,8 @@ def run(
         )
         for label, libs in libraries.items()
     }
-    sol = solve(with_materials(base, xs), tol_k=1e-6, tol_source=1e-5, verbose=verbose)
+    sol = solve(with_materials(base, xs), tol_k=1e-6, tol_source=1e-5, verbose=verbose,
+                cmfd=cmfd)  # fmt: skip
     return Result(st, shielding, sol, escapes, backgrounds, region_densities, libraries,
                   factors)  # fmt: skip
 

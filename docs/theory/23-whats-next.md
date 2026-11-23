@@ -12,12 +12,13 @@ checks that pin against continuous-energy Monte Carlo on the same data and
 corrects it (SPH factors, rings in the pellet), chapter 18 condenses it
 into two-group constants for a nodal code, and chapter 19 adds a second
 transport method (collision probabilities), the clad to the slowing-down
-calculation, and the 17×17 assembly, and chapter 20 repeats the lattice
+calculation, and the 17×17 assembly, chapter 20 repeats the lattice
 calculation at every point of a state matrix and builds the tables a nodal
-code reads. This chapter previews what
+code reads, chapter 21 solves the core with nodal diffusion, and
+chapter 22 brings it to power with thermal-hydraulic feedback. This chapter previews what
 remains.
 
-## Beyond chapter 20
+## Beyond chapter 22
 
 * **The assembly at converged tracking.** The pin cell's defaults (256
   directions, 10 rings) are too expensive for 17×17. Rod-by-rod tracking
@@ -32,11 +33,20 @@ remains.
 * **The state matrix with MOC.** Chapter 20 ran the matrix with the
   homogenized cell, whose Doppler feedback is 55% too strong. The same
   matrix with the heterogeneous solver takes about three hours.
-* **The nodal code.** M4 builds the nodal input from the core map and the
-  tables of chapter 20. It needs a new nodal code: the old one (branch
-  `claude-nodal`) is gone. The table format is ready for it; a fitted
-  polynomial (4 pcm off the grid) or multilinear interpolation (29 pcm, a
-  third boron node would help) are both available.
+* **Burning the absorbers.** Chapter 22's Pyrex rods are as loaded. Their
+  B-10 burns during the cycle, which needs depletion. Their worth is
+  1.1–1.2% weaker than KENO's, and the rod gets no shielding of its own.
+* **Control rods.** They follow the Pyrex path: a lattice with absorber
+  rods in the guide tubes, their own state matrix, and an axial position
+  in the core map. Resonant absorbers such as silver, indium and cadmium
+  need their own shielding.
+* **The remaining resonance formats.** LRF = 7 with an inelastic channel
+  (Fe-57), Reich–Moore with negative channel spins (Mn-55, Cr-53) and the
+  LRU = 2, LRF = 1 unresolved format (Fe-58) are still missing from the
+  steel and the clad. The LRF = 7 kernel is Python only. A Rust port pays
+  off once a full-range table needs rebuilding often.
+* NEM runs in seconds, the fine-mesh finite
+  difference in minutes; its red-black sweep is the hot path to port.
 * **Depletion.** Ring-wise shielding matters most once plutonium builds up
   at the pellet rim.
 

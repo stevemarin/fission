@@ -99,6 +99,99 @@ class ResolvedRange:
 
 
 @dataclass(frozen=True)
+class ParticlePair:
+    """Two particles a channel can hold (LRF=7): e.g. gamma + compound
+    nucleus (MT=102) or neutron + target in its ground state (MT=2)."""
+
+    ma: float  # masses in neutron masses
+    mb: float
+    za: float  # charges
+    zb: float
+    ia: float  # spins (the sign, if any, is the parity)
+    ib: float
+    q: float  # Q-value, eV
+    pnt: int  # 1 compute the penetrability, -1 do not, 0 default by MT
+    shf: int  # 1 compute the shift factor
+    mt: int  # reaction the pair stands for
+
+    @property
+    def is_gamma(self) -> bool:
+        return self.mt == 102
+
+
+@dataclass(frozen=True)
+class Channel:
+    """One channel of a spin group: a particle pair with orbital momentum l
+    and channel spin s, and its two radii (10^-12 cm)."""
+
+    pair: int  # index into RMLRange.pairs (0-based)
+    l: int
+    s: float
+    bnd: float  # boundary condition (only used with the shift factor)
+    ape: float  # effective radius: hard-sphere phase shift
+    apt: float  # true radius: penetrability and shift
+
+
+@dataclass(frozen=True)
+class RMLResonance:
+    energy: float
+    widths: tuple[float, ...]  # one per channel of the spin group (signed)
+
+
+@dataclass(frozen=True)
+class RMLSpinGroup:
+    """All levels of one J and parity, with the channels they decay into."""
+
+    j: float
+    parity: int  # +1 or -1
+    channels: tuple[Channel, ...]
+    resonances: tuple[RMLResonance, ...]
+
+
+@dataclass(frozen=True)
+class RMLRange:
+    """A resolved range in the R-Matrix Limited format (LRF=7).
+
+    Unlike LRF=1-3, every channel is listed explicitly: its particle pair,
+    l, channel spin s and radii. Only J and parity are conserved, so a spin
+    group may hold several neutron channels (both channel spins of a
+    target with spin, or l = 0 and 2 for the same J)."""
+
+    el: float
+    eh: float
+    ifg: int  # 0: widths in eV; 1: reduced-width amplitudes in eV^(1/2)
+    krm: int  # R-matrix approximation: 3 = Reich-Moore
+    krl: int  # 1: relativistic kinematics
+    pairs: tuple[ParticlePair, ...]
+    groups: tuple[RMLSpinGroup, ...]
+    lrf: int = 7
+    naps: int = 0  # unused: LRF=7 gives both radii per channel
+
+    @property
+    def formalism(self) -> str:
+        return FORMALISMS[7]
+
+    @property
+    def ap(self) -> float:
+        """Scattering radius of the s-wave neutron channel (APE), the LRF=7
+        counterpart of AP (sigma_p = 4 pi AP^2 at low energy)."""
+        n = self.neutron_pair
+        for sg in self.groups:
+            for ch in sg.channels:
+                if ch.pair == n and ch.l == 0:
+                    return ch.ape
+        return 0.0
+
+    @property
+    def neutron_pair(self) -> int:
+        """The entrance pair: a neutron (MA = 1) with Q = 0 or MT = 2."""
+        for i, p in enumerate(self.pairs):
+            if p.ma == 1.0 and (p.q == 0.0 or p.mt == 2):
+                return i
+        raise ValueError("LRF=7 range without a neutron + target pair")
+
+
+@dataclass(frozen=True)
 class UnresolvedJ:
     """Average parameters for one (l, J) sequence, tabulated in energy (LRF=2)."""
 
@@ -141,7 +234,7 @@ class EmptyRange:
     ap: float
 
 
-EnergyRange = ResolvedRange | UnresolvedRange | EmptyRange
+EnergyRange = ResolvedRange | RMLRange | UnresolvedRange | EmptyRange
 
 
 @dataclass(frozen=True)
@@ -152,8 +245,8 @@ class Isotope:
     ranges: tuple[EnergyRange, ...] = field(default_factory=tuple)
 
     @property
-    def resolved(self) -> ResolvedRange | None:
-        found = [r for r in self.ranges if isinstance(r, ResolvedRange)]
+    def resolved(self) -> ResolvedRange | RMLRange | None:
+        found = [r for r in self.ranges if isinstance(r, (ResolvedRange, RMLRange))]
         if len(found) > 1:
             raise ValueError("more than one resolved range")
         return found[0] if found else None
@@ -190,6 +283,10 @@ def _read_range(c: Cursor, lfw: int) -> EnergyRange:
         return EmptyRange(el, eh, spi=s.c1, ap=s.c2)
     if lru == 1 and lrf in (1, 2, 3):
         return _read_bw_or_rm(c, el, eh, lrf, naps, ap_table)
+    if lru == 1 and lrf == 7:
+        if ap_table is not None:
+            raise NotImplementedError("LRF=7 with an energy-dependent radius")
+        return _read_rml(c, el, eh)
     if lru == 2 and lrf == 2 and lfw in (0, 1):
         return _read_unresolved_lrf2(c, el, eh, naps)
     raise NotImplementedError(
@@ -228,6 +325,59 @@ def _read_bw_or_rm(c: Cursor, el, eh, lrf, naps, ap_table) -> ResolvedRange:
         groups=tuple(groups),
         ap_table=ap_table,
     )
+
+
+def _read_rml(c: Cursor, el: float, eh: float) -> RMLRange:
+    """R-Matrix Limited (ENDF-102 section 2.2.1.6)::
+
+    CONT 0, 0, IFG, KRM, NJS, KRL
+    LIST 0, 0, NPP, 0, 12*NPP, 2*NPP       particle pairs, 12 numbers each
+    per spin group:
+      LIST AJ, PJ, KBK, KPS, 6*NCH, NCH    channels: PPI, L, SCH, BND, APE, APT
+      LIST 0, 0, 0, NRS, 6*NX, NX          levels: ER, GAM_1 .. GAM_NCH,
+                                           each level padded to whole lines
+    """
+    head = c.cont()
+    ifg, krm, njs, krl = head.l1, head.l2, head.n1, head.n2
+    _, v = c.list_record()
+    # fmt: off
+    pairs = tuple(
+        ParticlePair(
+            ma=v[i], mb=v[i + 1], za=v[i + 2], zb=v[i + 3], ia=v[i + 4],
+            ib=v[i + 5], q=v[i + 6], pnt=round(v[i + 7]), shf=round(v[i + 8]),
+            mt=round(v[i + 9]),
+        )
+        for i in range(0, len(v), 12)
+    )
+    # fmt: on
+    groups = []
+    for _ in range(njs):
+        lst, v = c.list_record()
+        aj, pj, kbk, kps, nch = lst.c1, lst.c2, lst.l1, lst.l2, lst.n2
+        if kbk or kps:
+            raise NotImplementedError("LRF=7 background R-matrix or phase shifts")
+        # fmt: off
+        channels = tuple(
+            Channel(
+                pair=round(v[i]) - 1, l=round(v[i + 1]), s=v[i + 2],
+                bnd=v[i + 3], ape=v[i + 4], apt=v[i + 5],
+            )
+            for i in range(0, 6 * nch, 6)
+        )
+        # fmt: on
+        lst, v = c.list_record()
+        nrs = lst.l2
+        stride = 6 * (nch // 6 + 1)  # every level starts on a new line
+        levels = tuple(
+            RMLResonance(v[i], tuple(v[i + 1 : i + 1 + nch]))
+            for i in range(0, stride * nrs, stride)
+        )
+        if aj != 0.0:
+            parity = 1 if aj > 0 else -1
+        else:
+            parity = -1 if pj < 0 else 1
+        groups.append(RMLSpinGroup(abs(aj), parity, channels, levels))
+    return RMLRange(el, eh, ifg, krm, krl, pairs, tuple(groups))
 
 
 def _read_unresolved_lrf2(c: Cursor, el, eh, naps) -> UnresolvedRange:

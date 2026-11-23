@@ -1,0 +1,62 @@
+# Watts Bar Unit 1 cycle 1 with its three enrichment zones (M4b): the
+# core of wbn1-core.toml, with every assembly type in its place (VERA
+# Figure 9: 2.11% "a", 2.619% "b", 3.10% "c") and the steel baffle in the
+# radial reflector.
+#
+# Source: CASL-U-2012-0131-004 Rev. 4, Figure 9 (enrichments; the Pyrex
+# burnable absorbers of the figure are not modelled yet), Table 16 (baffle).
+# Each fuel type has its own 17x17 lattice calculation (models/wbn1-fuel-*),
+# the radial reflector the fuel | baffle | water slab (models/wbn1-baffle);
+# above and below the fuel there is water (the slab without steel).
+
+[model]
+extends = "wbn1-core"
+name = "WBN1 cycle 1 enrichment zones"
+
+[materials.fuel_211]
+temperature = "fuel"
+table = "wbn1-fuel-211-core-moc"
+[materials.fuel_262]
+temperature = "fuel"
+table = "wbn1-fuel-262-core-moc"
+[materials.fuel_310]
+temperature = "fuel"
+table = "wbn1-fuel-310-core-moc"
+[materials.baffle_reflector]
+table = "wbn1-baffle-reflector"
+
+[lattices.fuel_211]
+material = "fuel_211"
+[lattices.fuel_262]
+material = "fuel_262"
+[lattices.fuel_310]
+material = "fuel_310"
+[lattices.baffle_reflector]
+material = "baffle_reflector"
+
+[assemblies.a]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_211", height = 365.76 },
+         { lattice = "reflector", height = 21.5 }]
+[assemblies.b]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_262", height = 365.76 },
+         { lattice = "reflector", height = 21.5 }]
+[assemblies.c]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_310", height = 365.76 },
+         { lattice = "reflector", height = 21.5 }]
+[assemblies.side]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "baffle_reflector", height = 365.76 },
+         { lattice = "reflector", height = 21.5 }]
+
+[core]
+legend = { a = "a", b = "b", c = "c", R = "side" }
+map = """
+a b a b a b a c R
+b a b a b a c c R
+a b a b a b a c R
+b a b a b a c c R
+a b a b b b c R R
+b a b a b c c R .
+a c a c c c R R .
+c c c c R R R . .
+R R R R R . . . .
+"""

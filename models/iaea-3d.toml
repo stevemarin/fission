@@ -1,0 +1,74 @@
+# The IAEA 3D PWR benchmark: a two-group diffusion problem designed as a
+# "severe test for the capabilities of coarse mesh methods".
+#
+# Source: ANL-7416 Supplement 2 (1977), problem ID 11, figs. 1-3, as
+# reproduced in the FeenoX neutron-diffusion examples (free):
+# https://www.seamplex.com/feenox/examples/neutron_diffusion.pdf
+#
+# 20 cm assemblies; 340 cm of core between 20 cm reflectors. Rods (region 3)
+# are fully inserted in the centre assembly and in assemblies 5 and 31 of
+# fig. 1, and from 280 to 360 cm in assembly 18; above a rod the top
+# reflector is region 5. External boundaries: no incoming current, which
+# the benchmark replaces by d phi / dn = -(0.4692 / D) phi for diffusion
+# codes. The map is the south-east quadrant (quarter symmetry): its first
+# row and column lie on the symmetry planes, through the centre assembly.
+
+[model]
+format = 1
+name = "IAEA 3D PWR"
+multigroup = "iaea-3d-xs.toml"
+
+[materials.fuel1]
+macroscopic = "fuel1"
+[materials.fuel2]
+macroscopic = "fuel2"
+[materials.fuel2_rod]
+macroscopic = "fuel2_rod"
+[materials.reflector]
+macroscopic = "reflector"
+[materials.reflector_rod]
+macroscopic = "reflector_rod"
+
+[lattices.fuel1]
+material = "fuel1"
+[lattices.fuel2]
+material = "fuel2"
+[lattices.fuel2_rod]
+material = "fuel2_rod"
+[lattices.reflector]
+material = "reflector"
+[lattices.reflector_rod]
+material = "reflector_rod"
+
+# stacks from bottom to top, 380 cm each
+[assemblies.fuel1]
+axial = [{ lattice = "reflector", height = 20.0 }, { lattice = "fuel1", height = 340.0 },
+         { lattice = "reflector", height = 20.0 }]
+[assemblies.fuel2]
+axial = [{ lattice = "reflector", height = 20.0 }, { lattice = "fuel2", height = 340.0 },
+         { lattice = "reflector", height = 20.0 }]
+[assemblies.rodded]
+axial = [{ lattice = "reflector", height = 20.0 }, { lattice = "fuel2_rod", height = 340.0 },
+         { lattice = "reflector_rod", height = 20.0 }]
+[assemblies.partial]   # assembly 18: rod from 280 to 360 cm
+axial = [{ lattice = "reflector", height = 20.0 }, { lattice = "fuel2", height = 260.0 },
+         { lattice = "fuel2_rod", height = 80.0 }, { lattice = "reflector_rod", height = 20.0 }]
+[assemblies.reflector]
+axial = [{ lattice = "reflector", height = 380.0 }]
+
+[core]
+assembly_pitch = 20.0
+symmetry = "quarter"
+vacuum_coefficient = 0.4692
+legend = { "1" = "fuel1", "2" = "fuel2", X = "rodded", P = "partial", R = "reflector" }
+map = """
+X 2 2 2 X 2 2 1 R
+2 2 2 2 2 2 2 1 R
+2 2 P 2 2 2 1 1 R
+2 2 2 2 2 2 1 R R
+X 2 2 2 X 1 1 R .
+2 2 2 2 1 1 R R .
+2 2 1 1 1 R R . .
+1 1 1 R R R . . .
+R R R R . . . . .
+"""

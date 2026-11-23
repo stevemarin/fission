@@ -166,8 +166,8 @@ def main(argv: list[str] | None = None) -> None:
     rr = (
         Evaluation.from_file(EndfLibrary().neutron(args.nuclide)).resonances[0].resolved
     )
-    if rr is None:
-        raise SystemExit(f"{args.nuclide} has no resolved resonances")
+    if not isinstance(rr, ResolvedRange):
+        raise SystemExit(f"{args.nuclide} has no resolved resonances in LRF 1-3")
     group, res = min(
         ((g, r) for g in rr.groups for r in g.resonances),
         key=lambda gr: abs(gr[1].energy - args.energy),

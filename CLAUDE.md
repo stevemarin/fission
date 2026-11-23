@@ -38,6 +38,9 @@ make assembly STATES=2A PIN_ARGS="--rings --sph --clad"  # VERA 17x17 lattice: k
 make fewgroup STATES=1A PIN_ARGS="--rings --sph"  # 2-group constants (homogenize, B1, condense) -> endf-data/fewgroup/
 make branches BRANCHES=vera  # state matrix (M2): constants at every branch point -> endf-data/branches/ (~76 min infinite; BRANCH_ARGS="--solver moc --rings --sph --clad")
 make xs-tables BRANCHES=vera  # M3: table for the nodal code (endf-data/tables/) + tests: leave-one-out, PRESS-selected fit, check points (make branches BRANCH_ARGS="--check 10")
+make nodal NODAL_MODEL=iaea-3d NODAL_ARGS="--method fd --refine 4"  # M4: nodal diffusion of a core (NEM default; k + assembly powers)
+make reflector    # M4b: reflector constants (fuel | water slab, MOC, no CMFD) -> endf-data/tables/vera-p1-reflector.json (~30 min)
+make feedback FEEDBACK_MODEL=wbn1-core  # M4b: core at power, NEM + channels + fuel rods (python -m fission.feedback ... --power 0.5)
 make nodal-check STATE=1A  # old nodal code (endf-data/nodal-src copy, tools env) on those constants
 make openmc-library  # NJOY -> OpenMC HDF5 of our ENDF files (endf-data/openmc/, ~10 min; check only)
 make openmc-pin STATES=1A PIN_ARGS="--rings --sph"  # OpenMC CE reference of the pin vs this code (~15 min/state)
@@ -150,6 +153,35 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   out, JSON write/read), `select` (greedy terms by PRESS e/(1-h), fewest
   within 1% of best, one term set for all constants), `fit`, `k_infinity`.
   `branches.sample_states` / `run_states` = off-grid check points.
+- `src/fission/nodal/` (M4): `mesh.core_mesh` (model core -> [nz, ny, nx]
+  nodes; quarter symmetry = half-width first row/column + reflective
+  west/north; void outside the map = vacuum faces; z vacuum),
+  `diffusion` (D~ couplings incl. Robin c, operator with D^, power
+  iteration + red-black SOR, Rust `diffusion.rs` sweeps, `currents`), `nem` (4th-order polynomials,
+  quadratic transverse leakage, batched two-node problems with far-face
+  CMFD *currents* (lagged face fluxes diverged), one-node at external
+  faces, D^ update, `effective` = one-sided rewrite where |D^| > D~).
+  MacroXS has optional `diffusion` (D) and `nu_fission`; Core has
+  `vacuum_coefficient` (0.5 Marshak; IAEA 0.4692). `models/iaea-3d.toml`.
+- `src/fission/feedback/` (M4b): `water` (IAPWS-IF97 region 1: v, h, cp,
+  T(h), cv, drho/dp; Table 5 to 1e-8; viscosity IAPWS R12-08 and
+  conductivity R15-11 industrial (mu_2 = 1, lambda_2 kept), their tables to
+  1e-8), `fuel` (rod: pellet int k dT, gap, clad, film; OECD/NEA MOX
+  benchmark 2003 sec. 7 properties; T_eff = 0.3 Tc + 0.7 Ts),
+  `convection` (Dittus-Boelter 0.023 Re^0.8 Pr^0.4 x Presser bundle factor,
+  per MOOSE docs; Re ~4.5e5 is beyond its 1.2e5 range),
+  `core.solve` (Picard: `nodal.mesh.with_states` per-node MacroXS from
+  tables, NEM warm-started (`nem.solve(start=)`), power from kappa Sigma_f,
+  channel enthalpy per node column, rods; `power_level`). Material key
+  `table = "<name>"` (endf-data/tables/<name>.json, or a .json path);
+  `[core] state`, `[core.thermal]` (+ optional rod_pitch, flow_area,
+  hydraulic_diameter for the film). Rectangular lattice maps allowed
+  (`lattices.reflector` in vera-p1: 17 fuel + 17 water cells);
+  `fewgroup.reflector` homogenizes the water cells (`homogenize(regions=)`),
+  D = 1/(3 Sigma_tr). `branches` validates MOC points (`_valid`: finite k,
+  positive flux, B1 solvable) and retries with `cmfd=False`.
+  `models/wbn1-core.toml`: WBN1 shape/conditions (VERA Fig. 9, Table P6-1),
+  all VERA-1 fuel + water reflector (illustrative).
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -176,7 +208,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `tests/`: one file per module plus `test_rust_parity.py`;
   `helpers.endf_line` builds synthetic 80-column records.
 - `docs/theory/NN-*.md`: theory chapters (Markdown + LaTeX, ENDF-102
-  notation); `22-references.md` holds anchors `[]{#ref-xxx}`; cite as
+  notation); `24-references.md` holds anchors `[]{#ref-xxx}`; cite as
   `[[Name](#ref-xxx) §x.y]`.
 
 ## Conventions and gotchas
@@ -204,8 +236,12 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - Flux shapes: `group_library(flux_shape=(E, F))` weights every integral by
   w F (table pre-multiplied with `shape_table`); `cached_groups(...,
   flux_shape, shape_name)` caches them. Used for homogeneous NR shielding.
-- Unsupported formats so far: LRF=7 (Fe-54, Fe-57), URR LRU=2 LRF=1 (Fe-58),
-  Reich-Moore negative-J channel spins (Cr-53); left out of VERA clad.
+- LRF=7 (R-Matrix Limited, KRM=3, gamma + neutron pairs only): `endf/rml.py`
+  (Python only; = LRF=3 to 1e-12, NJOY to 5e-7): Si-28/29/30, Fe-54.
+  Unsupported (`pincell.run.UNSUPPORTED`): Fe-57 (LRF=7 inelastic pair),
+  Fe-58 (URR LRU=2 LRF=1), Mn-55 + Cr-53 (Reich-Moore negative-J spins).
+- MF6 incident interpolation INT 11-15 (corresponding points, Si continua)
+  is read as unit base over one bin (`incident.IncidentGrid.bracket`).
 - Thermal (A4): H-1 (awr < 1) is a free gas from the end of its law up to
   1 keV (OpenMC's rule). Otherwise below 4 eV the elastic rows are replaced by a free-gas kernel
   (default, normalized to the broadened elastic table, as NJOY) or by MF7
@@ -232,7 +268,7 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 
 Done: setup, ENDF reader, resonance reconstruction (0 K pointwise tables),
 A1 Doppler broadening, A2 secondary-neutron data, A3 multigroup libraries,
-A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1), C4 CP + clad + 17x17 assembly; M2 state matrix, M3 tables; theory docs ch. 0–22. Data and transport are independent tracks that meet at
+A4 thermal scattering, A5 infinite-medium k-inf, M1 model file, B1 geometry + ray tracing, B2 MOC (C5G7), B3 CMFD, C1 self-shielding, C2 OpenMC reference + SPH + rings, C3 few-group constants (B1), C4 CP + clad + 17x17 assembly; M2 state matrix, M3 tables, M4 nodal solver + core at power; theory docs ch. 0–24. Data and transport are independent tracks that meet at
 self-shielding (C1).
 
 - **A: nuclear data → multigroup library**
@@ -306,8 +342,33 @@ self-shielding (C1).
     tallies, drops face currents, takes `boundary=` (SPH warm start).
     1A-1D vs OpenMC default -62/-92/-85/-164; 1B/1D vs at-rest -89/-23, all
     rates within 1e-4 per fission neutron. C5G7 +12 pcm.
-  - Next: M4 (needs a new nodal code), the MOC state matrix (~3 h), the
-    march with moving H, or the assembly at converged tracking
+  - Loading pattern, enrichment zones (done, ch. 22 "The loading
+    pattern"): `models/wbn1-zoned.toml` (extends wbn1-core; VERA Fig. 9
+    map a/b/c = 2.11/2.619/3.10%, R = baffle reflector), fuel types
+    `wbn1-fuel-{211,262,310}.toml` (extend vera-p2; Table 17 U-234/U-236;
+    `[branches.core]` 2x2x2 around 2B, assembly MOC 64/0.03/3 rings, ~13
+    min/point), `wbn1-baffle.toml` (17 F + 2 steel + 15 W slab, SS304 x
+    2.85/2.52 without Si/Mn/Cr53/Fe54/57/58/C/P). Tables
+    wbn1-fuel-*-core-moc, wbn1-baffle-reflector. Lattices overmoderated at
+    1300 ppm: density coeff -88/-48/-22 pcm per 0.01, total MTC
+    +19.6/+10.5/+4.6 pcm/K. Core: HZP k 1.08485, peak 1.445; 100% power
+    k 1.07666 (defect 701 pcm), peak 1.393, outlet <= 612 K, AO ~0.
+  - Pyrex burnable absorbers (ch. 6 LRF=7, ch. 22 "Burnable absorbers"):
+    `models/vera-p2-pyrex.toml` (rod per VERA Table 6, P2-4 densities,
+    lattices `pyrex_{4..24}` = Figure 5, states 2E/2F + pin powers). Vs
+    KENO: 2B -193, 2E -36, 2F +56 pcm; worth 1.1-1.2% weak; pins <= 0.3%.
+    `[branches.pN]` in wbn1-fuel-262 (p16/20/24) and -310 (p8/12/16/24),
+    `models/wbn1-pyrex.toml` = Figure 9 map (1712 rods, poisoned zone
+    360.68 cm with 3.81/1.27 cm unpoisoned fuel below/above). Pyrex
+    lattices undermoderated (density coeff +8..+64 pcm/0.01, MTC -3.7 to
+    -19.3 pcm/K). Core HZP k 1.00025 at 1300 ppm (measured critical 1291
+    ppm, VERA Table 18; ~11 ppm high with measured DBW), ITC -3.30 pcm/F
+    (`feedback --itc`, `feedback.core.isothermal`) vs KENO -3.18, measured
+    -2.17 (Table P5-7); zoned without Pyrex +3.42. 100%: k 0.99067, defect
+    967 pcm, peak 1.271, AO -7.4%. NEM needed D^ under-relaxation 0.5 for
+    the thin axial nodes (`nem.RELAX`, now default). Baffle rerun with full
+    SS304 (minus Fe57/58, Mn55, Cr53): zoned core +8 pcm.
+  - Next: control rods
 - **M: model building** (describe the reactor once, as data; generate every calculation from it)
   - M1 declarative model file: TOML layers + states, number densities, homogenization (done)
   - M2 state-matrix driver (done, ch. 20): `make branches`; VERA matrix
@@ -323,7 +384,23 @@ self-shielding (C1).
     multilinear sqrt(T) max +29 pcm (boron curvature 0-1300 ppm), T +57,
     fit +4 pcm; constants within 0.35%. ADFs interpolated like XS (1 for
     the infinite medium).
-  - M4 core model -> nodal input (core map + tables); the nodal code must be
-    rewritten here (branch `claude-nodal` deleted)
+  - M4a nodal solver (done, ch. 21): FD (exact cube converges h^2) + NEM
+    with CMFD (cube: 1D exact, 2D/3D third order). IAEA 3D (ANL-7416
+    supp. 2 problem 11, via FeenoX doc): NEM 20 cm k = 1.028988 (2.5 s),
+    10 cm 1.029095, 5 cm 1.029074; FD 20 cm 1.031666, 2.5 cm 1.028895;
+    FeenoX FEM 1.02918/1.02912; FD 1.25 cm 1.029022. Rust `diffusion.rs`
+    = red-black SOR sweeps of one group, bitwise = Python `_sweep`, threaded
+    by z planes above 32k nodes/thread (`diffusion.solve(use_rust=True)`):
+    NEM 20 cm 0.6 s, FD 2.5 cm 34 s (was 269 s).
+  - M4b core at power (done, ch. 22): reflector from a 17 fuel + 17 water
+    slab by MOC (no CMFD; D2 0.31, Sigma_a2 0.0304 at 1300 ppm); fuel from
+    `[branches.core]` (12 MOC points, 128 azim, 10 rings; Doppler -2.57
+    pcm/K vs -3.96 homogenized) -> table vera-p1-core-moc; IF97 water, rod
+    model, Picard with NEM warm start. wbn1-core: HZP k 1.16722, 50% power
+    1.15840 (power defect 652 pcm), AO -7.7%, peak assembly 2.18 -> 1.97,
+    11 iterations / 15 s. 100% boils (single fuel type, peaking 2.2).
+    Film (h 39-42 kW/m2K, +15 K): 50% k 1.15793, defect 687 pcm, Doppler T
+    avg 680 K, peak centreline 1331 K.
+    Full 48-point MOC matrix not finished (3 points in the table).
   - Later: hex geometry, eighth symmetry, burnup histories (with depletion)
 - Deferred: unresolved-range probability tables, depletion.

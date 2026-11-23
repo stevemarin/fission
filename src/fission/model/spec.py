@@ -58,6 +58,7 @@ class Material:
     soluble_boron: Isotopics | None = None
     thermal: dict[str, str] | None = None  # nuclide -> S(alpha, beta) law
     macroscopic: str | None = None  # name in the model's multigroup library
+    table: str | None = None  # few-group table (M3) evaluated at each node's state
 
     def thermal_law(self, nuclide: str) -> str:
         return (self.thermal or {}).get(nuclide, "free-gas")
@@ -96,7 +97,15 @@ class Lattice:
 
     @property
     def width(self) -> float | None:
-        """Side length (cm) of a pin lattice; None for a homogeneous slice."""
+        """Width (cm, along x) of a pin lattice; None for a homogeneous slice.
+        Maps are square for assemblies; a rectangular map (e.g. one row of a
+        fuel-reflector slab) is allowed for lattice calculations."""
+        if self.pins is None or self.pitch is None:
+            return None
+        return len(self.pins[0]) * self.pitch + 2 * self.gap
+
+    @property
+    def height(self) -> float | None:
         if self.pins is None or self.pitch is None:
             return None
         return len(self.pins) * self.pitch + 2 * self.gap
@@ -121,11 +130,35 @@ class Assembly:
 
 
 @dataclass(frozen=True)
+class CoreThermal:
+    """Operating conditions and fuel-rod data for thermal-hydraulic feedback
+    (M4b). Per assembly; SI units except the rod radii (cm, like the pins)."""
+
+    assembly_power: float  # W
+    assembly_flow: float  # kg/s through the core (bypass removed)
+    inlet_temperature: float  # K
+    pressure: float  # Pa
+    fuel_heat_fraction: float  # of the power deposited in the fuel rods
+    rods: int  # fuel rods per assembly
+    pellet_radius: float  # cm
+    clad_inner: float  # cm
+    clad_outer: float  # cm
+    gap_conductance: float  # W/(m^2 K)
+    # clad-to-water heat transfer (optional; without them the clad surface is
+    # at the water temperature)
+    rod_pitch: float | None = None  # cm
+    flow_area: float | None = None  # cm^2 per assembly
+    hydraulic_diameter: float | None = None  # cm
+
+
+@dataclass(frozen=True)
 class Core:
     """Assemblies on a square map; None marks a position outside the core.
 
     ``boundary`` gives the condition on each side of the mapped region
-    ("reflective" or "vacuum"; default vacuum).
+    ("reflective" or "vacuum"; default vacuum). A diffusion calculation also
+    puts vacuum below and above the assembly stacks and on every face towards
+    a position outside the map.
 
     With ``symmetry = "quarter"`` the map is the south-east quadrant: its
     first row and column lie on the symmetry lines (an odd-sized core, with
@@ -139,6 +172,12 @@ class Core:
     boundary: dict[str, str] = field(
         default_factory=lambda: dict.fromkeys(SIDES, "vacuum")
     )
+    # vacuum sides of a diffusion calculation: d phi / dn = -(c / D) phi.
+    # c = 0.5 is zero incoming partial current in diffusion theory (Marshak);
+    # benchmarks may prescribe another value (IAEA: 0.4692).
+    vacuum_coefficient: float = 0.5
+    state: str | None = None  # operating state (boron; starting temperatures)
+    thermal: CoreThermal | None = None
 
     def full_map(self) -> tuple[tuple[str | None, ...], ...]:
         if self.symmetry == "full":

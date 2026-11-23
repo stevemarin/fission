@@ -11,6 +11,15 @@ interpolation code [ENDF-102 §0.5.2]:
                      interpolate at fixed x, map back to the interpolated
                      range, and multiply by the Jacobian dx/dE' so that the
                      result stays normalized.
+    INT = 11, 12     "method of corresponding points". ENDF-102 (§0.5.2)
+                     splits each distribution into bins of equal integral
+                     and interpolates corresponding bins by unit base; it
+                     does not fix the number of bins. With one bin, the
+                     whole range, this is unit-base interpolation, and that
+                     is what is done here. (Silicon's MF6 continua use
+                     INT = 12; their neighbouring panels have different
+                     numbers of points, so point-by-point correspondence is
+                     not possible.)
 
 Unit base matters when the range of E' moves with E (e.g. inelastic
 scattering, E' <= E - threshold): Cartesian interpolation would then mix a
@@ -58,7 +67,7 @@ class IncidentGrid:
             return Bracket(len(es) - 2, 1.0, False)
         i = bisect_right(es, energy) - 1  # a repeated energy: take the upper side
         law = self.laws[bisect_left(self.breaks, i + 2)]
-        base = law - 20 if law > 20 else law
+        base = law % 10 if law > 10 else law  # 11-15 and 21-25 follow laws 1-5
         if base == 1:
             t = 0.0
         elif base == 2:
@@ -67,7 +76,7 @@ class IncidentGrid:
             t = math.log(energy / es[i]) / math.log(es[i + 1] / es[i])
         else:
             raise NotImplementedError(f"incident-energy interpolation law {law}")
-        return Bracket(i, t, law > 20)
+        return Bracket(i, t, law > 10)  # corresponding points: unit base (above)
 
 
 def interpolate_panels(

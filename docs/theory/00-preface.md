@@ -35,7 +35,9 @@ chapter 16 treats self-shielding in a pin cell, chapter 17 checks it against
 continuous-energy Monte Carlo and corrects it, chapter 18 condenses it into
 two-group constants for a nodal code, chapter 19 moves on to the 17×17
 assembly, chapter 20 repeats the lattice calculation over the operating
-conditions of a core (the state matrix), and chapter 21 previews the rest.
+conditions of a core (the state matrix), chapter 21 solves the whole core
+with nodal diffusion, chapter 22 brings it to power with thermal-hydraulic
+feedback, and chapter 23 previews the rest.
 
 ## How to read these notes {.unnumbered}
 

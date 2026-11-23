@@ -65,8 +65,31 @@ def lattice_constants(
         from fission.pincell.heterogeneous import run as moc
 
         r = moc(state.name, model=m, lattice=lattice, **options)
-        return r.solution.k, homogenize(r, state.name)
+        fine = homogenize(r, state.name)
+        if not _valid(r.solution, fine):
+            # CMFD can fail to start on some states (negative early water
+            # fluxes) and end on a non-physical solution; plain power
+            # iteration is slower but robust
+            r = moc(state.name, model=m, lattice=lattice, **{**options, "cmfd": False})
+            fine = homogenize(r, state.name)
+            if not _valid(r.solution, fine):
+                raise RuntimeError(f"{state.name}: no valid lattice solution")
+        return r.solution.k, fine
     raise ValueError(f"unknown solver {solver!r} (have {', '.join(SOLVERS)})")
+
+
+def _valid(solution, fine: FineConstants) -> bool:
+    """A usable lattice solution: finite k, positive fluxes everywhere, and
+    homogenized constants with which the B1 equations can be solved."""
+    if not (np.isfinite(solution.k) and 0.2 < solution.k < 3.0):
+        return False
+    if not np.all(solution.flux > 0) or not np.all(np.isfinite(fine.total)):
+        return False
+    try:
+        critical(fine)
+    except np.linalg.LinAlgError, ValueError, FloatingPointError:
+        return False
+    return True
 
 
 def few_group(fine: FineConstants, spectrum: str, cuts: tuple[float, ...]) -> FewGroup:

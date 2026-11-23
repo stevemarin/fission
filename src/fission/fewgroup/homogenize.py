@@ -64,24 +64,32 @@ class FineConstants:
         return float(self.nu_fission @ np.linalg.solve(a, self.chi))
 
 
-def homogenize(result, name: str = "cell") -> FineConstants:
-    """Constants of the whole cell of a ``heterogeneous.Result``."""
+def homogenize(result, name: str = "cell", regions: np.ndarray | None = None,
+               ) -> FineConstants:  # fmt: skip
+    """Constants of the whole cell of a ``heterogeneous.Result``, or of the
+    flat-source regions where the boolean mask `regions` is true (e.g. the
+    water of a fuel-reflector slab)."""
     sol = result.solution
     problem = sol.problem
     labels = np.array(problem.geometry.materials())
+    keep = np.ones(len(labels), dtype=bool) if regions is None else np.asarray(regions)
     names = sorted(set(labels.tolist()))  # MOC materials, in Problem.xs order
     groups = next(iter(next(iter(result.libraries.values())).values())).groups
     size = groups.size
     upper, lower = np.asarray(groups.boundaries[:-1]), np.asarray(groups.boundaries[1:])
     midpoint = np.sqrt(upper * lower)
-    volume = problem.areas.sum()
-    flux_total = (problem.areas[:, None] * sol.flux).sum(axis=0)  # sum_r V_r phi_r
+    volume = problem.areas[keep].sum()
+    flux_total = (problem.areas[keep, None] * sol.flux[keep]).sum(
+        axis=0
+    )  # sum_r V_r phi_r
     rates = {k: np.zeros(size) for k in ("total", "nu", "fission", "kappa")}
     scatter = np.zeros((2, size, size))
     chi = np.zeros(size)
     production = 0.0
     for index, label in enumerate(names):
-        mask = labels == label
+        mask = (labels == label) & keep
+        if not mask.any():
+            continue
         flux = (problem.areas[mask, None] * sol.flux[mask]).sum(axis=0)
         region_production = 0.0
         for n, lib in result.libraries[label].items():
@@ -107,13 +115,13 @@ def homogenize(result, name: str = "cell") -> FineConstants:
         scatter = np.where(flux_total[None, :, None] > 0,
                            scatter / flux_total[None, :, None], 0.0)  # fmt: skip
     surface = None
-    if sol.psi is not None:
+    if sol.psi is not None and regions is None:
         sides = surface_flux(problem, sol.psi)
         if sides:
             surface = np.mean(list(sides.values()), axis=0)
     return FineConstants(
         name, groups, flux_total / volume, per["total"], scatter, per["nu"],
-        per["fission"], per["kappa"], chi / production, surface,
+        per["fission"], per["kappa"], chi / production if production > 0 else chi, surface,
     )  # fmt: skip
 
 

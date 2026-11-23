@@ -171,6 +171,34 @@ source or a standard text.
 - []{#ref-dlmf}**[DLMF]** *NIST Digital Library of Mathematical Functions*,
   §10.47, spherical Bessel functions. <https://dlmf.nist.gov/10.47>
   **(free)**
+- []{#ref-if97}**[IAPWS-IF97]** IAPWS, *Revised Release on the IAPWS
+  Industrial Formulation 1997 for the Thermodynamic Properties of Water and
+  Steam*, IAPWS R7-97(2012), section 5.1 and Tables 2-5 (region 1).
+  <https://iapws.org/technical-guidance/release/IF97-Rev.download> **(free)**
+- []{#ref-iapwsvisc}**[IAPWS viscosity]** IAPWS, *Release on the IAPWS
+  Formulation 2008 for the Viscosity of Ordinary Water Substance*, IAPWS
+  R12-08, Eqs. (10)-(12), Tables 1-2 and 4, section 3 (industrial use).
+  <https://iapws.org/technical-guidance/release/viscosity.download> **(free)**
+- []{#ref-iapwscond}**[IAPWS conductivity]** IAPWS, *Release on the IAPWS
+  Formulation 2011 for the Thermal Conductivity of Ordinary Water Substance*,
+  IAPWS R15-11, Eqs. (15)-(25), Tables 1-3, 6 and 7, section 3 (industrial
+  use). <https://iapws.org/technical-guidance/release/ThCond.download>
+  **(free)**
+- []{#ref-moose}**[MOOSE]** Idaho National Laboratory, MOOSE framework
+  documentation: `SCMHTCDittusBoelter` (subchannel module) and
+  `DittusBoelterFunctorMaterial` (Navier-Stokes module), after Dittus and
+  Boelter (1930), McAdams (1954) and Presser (1967).
+  <https://github.com/idaholab/moose> **(free)**
+- []{#ref-moxbench}**[MOX benchmark]** OECD/NEA, *PWR MOX/UO2 Core Transient
+  Benchmark: Final Specifications* (2003), section 7, thermal-physical
+  properties (after Finnemann, 1991).
+  <https://www.oecd-nea.org/upload/docs/application/pdf/2020-10/mox_benchmark_specifications_2003.pdf>
+  **(free)**
+- []{#ref-feenox}**[FeenoX]** FeenoX documentation, *Neutron diffusion*
+  examples: the IAEA 2D and 3D PWR benchmarks, with the problem description
+  of ANL-7416 Supplement 2, problem 11 (figs. 3-5), and finite-element
+  solutions. <https://www.seamplex.com/feenox/examples/neutron_diffusion.pdf>
+  **(free)**
 - []{#ref-codata}**[CODATA]** NIST, *Fundamental Physical Constants*
   (CODATA 2018 values used in the code).
   <https://physics.nist.gov/cuu/Constants/> **(free)**

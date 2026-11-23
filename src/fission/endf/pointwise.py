@@ -38,8 +38,9 @@ from .evaluation import Evaluation
 from .mlbw import mlbw
 from .reconstruct import adaptive_grid, reconstruction_seeds
 from .reich_moore import reich_moore
-from .resonances import ResolvedRange
-from .slbw import slbw
+from .resonances import ResolvedRange, RMLRange
+from .rml import RMatrixLimited
+from .slbw import ResonanceXS, slbw
 
 SHADE = 1e-7  # relative offset used to split a discontinuity
 TOTAL, ELASTIC, FISSION, CAPTURE = 1, 2, 18, 102
@@ -147,13 +148,26 @@ def shaded_points(x: list[float]) -> tuple[set[float], set[float]]:
     return points, jumps
 
 
+def _formalism(
+    rr: ResolvedRange | RMLRange,
+) -> Callable[[float], ResonanceXS]:
+    """energy -> resonance cross sections for the range's formalism."""
+    if isinstance(rr, RMLRange):
+        return RMatrixLimited(rr)
+    f = {1: slbw, 2: mlbw, 3: reich_moore}[rr.lrf]
+    return lambda e: f(rr, e)
+
+
 def _resonance_evaluator(
-    rr: ResolvedRange | None, use_rust: bool, python_f: Callable[[float], tuple]
+    rr: ResolvedRange | RMLRange | None,
+    use_rust: bool,
+    python_f: Callable[[float], tuple],
 ) -> Callable[[float], tuple[float, float, float]] | None:
-    """Resonance-only (elastic, capture, fission), in Rust when available."""
+    """Resonance-only (elastic, capture, fission), in Rust when available
+    (LRF=7 stays in Python: its nuclides have few resonances)."""
     if rr is None:
         return None
-    if use_rust and rr.lrf in (2, 3):
+    if use_rust and isinstance(rr, ResolvedRange) and rr.lrf in (2, 3):
         from .fast import resonance_model
 
         model = resonance_model(rr)
@@ -188,10 +202,10 @@ def pointwise(
         rr = iso.resolved
     resonance = None
     if rr is not None:
-        formalism = {1: slbw, 2: mlbw, 3: reich_moore}[rr.lrf]
+        formalism = _formalism(rr)
 
         def python_resonance(e: float) -> tuple[float, float, float]:
-            x = formalism(rr, e)
+            x = formalism(e)
             return x.elastic, x.capture, x.fission
 
         resonance = _resonance_evaluator(rr, use_rust, python_resonance)
@@ -225,7 +239,9 @@ def pointwise(
     seeds = {e for e in seeds if lo <= e <= hi and e not in jumps}
     # a shaded pair straddles a jump: refining it would only put the jump back
     shaded_pairs = {(e * (1 - SHADE), e * (1 + SHADE)) for e in jumps}
-    if use_rust and (rr is None or rr.lrf in (2, 3)):
+    if use_rust and (
+        rr is None or (isinstance(rr, ResolvedRange) and rr.lrf in (2, 3))
+    ):
         # the same refinement, entirely in Rust and on all cores
         from .. import _rust
         from .fast import resonance_model

@@ -6,7 +6,10 @@ constants (1/cm), not by nuclides. A model points at such a library with
 ``macroscopic = "name"``. The library file holds, per material,
 
     transport (or total), absorption, scatter[g][g'] (g -> g', g = 0 fastest),
-    and for fissile materials fission, nu and chi.
+    and for fissile materials fission, nu and chi (or nu_fission and chi when
+    a benchmark gives only the product). Diffusion benchmarks also give the
+    diffusion coefficient D per group (``diffusion``, cm); without it, a
+    diffusion solver uses D = 1 / (3 Sigma_tr).
 
 The transport solver uses ``transport`` as its total cross section when it is
 given (transport-corrected, isotropic scattering), otherwise ``total``.
@@ -37,6 +40,16 @@ class MacroXS:
     fission: np.ndarray
     nu_fission: np.ndarray
     chi: np.ndarray
+    diffusion: np.ndarray | None = None  # D (cm), if the library gives it
+    kappa_fission: np.ndarray | None = None  # recoverable energy x Sigma_f (eV/cm)
+    adf: np.ndarray | None = None  # assembly discontinuity factors (1 if None)
+
+    @property
+    def diffusion_coefficient(self) -> np.ndarray:
+        """D per group: as given, or 1 / (3 Sigma_tr) from the transport total."""
+        if self.diffusion is not None:
+            return self.diffusion
+        return 1.0 / (3.0 * self.total)
 
     @property
     def groups(self) -> int:
@@ -74,16 +87,27 @@ def parse_multigroup(data: dict[str, Any], source: str = "") -> dict[str, MacroX
             raise LibraryError(
                 f"{where}.scatter: expected {groups} x {groups} non-negative"
             )
-        if "fission" in m:
-            fission = _vector(m, "fission", where, groups)
-            nu_fission = fission * _vector(m, "nu", where, groups)
+        if "fission" in m or "nu_fission" in m:
+            if "nu_fission" in m:  # only the product is given
+                nu_fission = _vector(m, "nu_fission", where, groups)
+                fission = (
+                    _vector(m, "fission", where, groups) if "fission" in m
+                    else np.zeros(groups)
+                )  # fmt: skip
+            else:
+                fission = _vector(m, "fission", where, groups)
+                nu_fission = fission * _vector(m, "nu", where, groups)
             chi = _vector(m, "chi", where, groups)
             if abs(chi.sum() - 1) > 1e-3:
                 raise LibraryError(f"{where}.chi: sums to {chi.sum():g}, not 1")
             chi = chi / chi.sum()
         else:
             fission = nu_fission = chi = np.zeros(groups)
-        out[name] = MacroXS(name, total, absorption, scatter, fission, nu_fission, chi)
+        diffusion = _vector(m, "diffusion", where, groups) if "diffusion" in m else None
+        if diffusion is not None and np.any(diffusion <= 0):
+            raise LibraryError(f"{where}.diffusion: must be positive")
+        out[name] = MacroXS(name, total, absorption, scatter, fission, nu_fission, chi,
+                            diffusion)  # fmt: skip
     return out
 
 

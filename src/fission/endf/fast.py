@@ -55,6 +55,8 @@ def reconstruct(
     rr = iso.resolved
     if rr is None:
         raise ValueError("no resolved resonance range")
+    if not isinstance(rr, ResolvedRange):
+        raise NotImplementedError("Rust reconstruction of LRF=7 (use rml.py)")
     backgrounds = [
         ev.cross_section(mt).table if mt in ev.reactions else None
         for mt in BACKGROUND_MT.values()

@@ -289,7 +289,7 @@ in MF2) [[ENDF-102](#ref-endf102) §2.2]:
 | 1 | Single-Level Breit–Wigner (SLBW) | none | (reference, chapter 4) |
 | 2 | Multi-Level Breit–Wigner (MLBW) | elastic only | U-234, Zr-90…96 |
 | 3 | Reich–Moore | full (R-matrix) | U-235, U-238 |
-| 7 | R-Matrix Limited | full, general channels | (not used by our nuclides) |
+| 7 | R-Matrix Limited | full, general channels | Si-28, 29, 30, Fe-54 (chapter 6) |
 
 At higher energies each evaluation switches to an **unresolved range**
 (LRU = 2) where only averages are given. H-1, O-16 and the boron isotopes have

@@ -248,6 +248,17 @@ $\mathrm{d}x/\mathrm{d}E'$, which preserves the normalization
 nuclides use it. Quantities that are not densities, such as Kalbach's $r$,
 are interpolated at fixed $x$ without the Jacobian.
 
+Silicon (the Pyrex glass of chapter 22) uses a third code, INT = 12, the
+"method of corresponding points". ENDF-102 describes it only loosely. Each
+spectrum is split into bins of equal integral, and corresponding bins of
+the two spectra are interpolated by unit base, but the number of bins is
+not fixed. The neighbouring spectra of silicon have different numbers of
+points, so the points themselves cannot correspond one to one. This code
+reads INT = 11–15 as unit base over one bin, the whole range. NJOY or
+another processor may use more bins. The difference only matters in the
+shape of the MeV spectra of silicon's (n,2n), (n,nα), (n,np) and continuum
+inelastic reactions.
+
 ## What the reader checks
 
 All MF4, MF5 and MF6 sections of the twelve pin-cell nuclides are read

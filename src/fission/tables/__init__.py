@@ -136,6 +136,16 @@ class XSTable:
     def constants(self, state) -> dict[str, np.ndarray]:
         return {k: self(k, state) for k in KEYS if k in self.data}
 
+    def macro(self, state, name: str = "table"):
+        """The constants at a state as a ``model.MacroXS`` (for the nodal code)."""
+        from fission.model import MacroXS
+
+        c = self.constants(state)
+        return MacroXS(
+            name, c["total"], c["sigma_a"], c["sigma_s"], c["sigma_f"], c["nu_sigma_f"],
+            c["chi"], c["D"], c["kappa_sigma_f"], c.get("adf"),
+        )  # fmt: skip
+
     def without(self, axis: str, index: int) -> XSTable:
         """The table with one node of one axis removed (leave one out)."""
         n = BRANCH_AXES.index(axis)

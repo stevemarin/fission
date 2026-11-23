@@ -1,0 +1,52 @@
+# Two-group constants of the IAEA 3D PWR benchmark (1/cm, D in cm).
+#
+# Source: Argonne Code Center, Benchmark Problem Book, ANL-7416 Supplement 2
+# (1977), problem ID 11 (submitted June 1976 by Lee, Menely, Micheelsen,
+# Vondy, Wagner, Werner), as reproduced in the FeenoX neutron-diffusion
+# examples, figs. 3-5 (free):
+# https://www.seamplex.com/feenox/examples/neutron_diffusion.pdf
+#
+# Only D, Sigma_1->2, Sigma_a and nu Sigma_f2 are given; all fission
+# neutrons are born fast. "total" here is absorption plus out-scattering
+# (the removal), which a diffusion calculation does not otherwise use.
+
+[library]
+format = 1
+name = "IAEA 3D PWR"
+groups = 2
+
+[materials.fuel1]   # region 1
+diffusion = [1.5, 0.4]
+absorption = [0.01, 0.08]
+total = [0.03, 0.08]
+scatter = [[0.0, 0.02], [0.0, 0.0]]
+nu_fission = [0.0, 0.135]
+chi = [1.0, 0.0]
+
+[materials.fuel2]   # region 2
+diffusion = [1.5, 0.4]
+absorption = [0.01, 0.085]
+total = [0.03, 0.085]
+scatter = [[0.0, 0.02], [0.0, 0.0]]
+nu_fission = [0.0, 0.135]
+chi = [1.0, 0.0]
+
+[materials.fuel2_rod]   # region 3
+diffusion = [1.5, 0.4]
+absorption = [0.01, 0.13]
+total = [0.03, 0.13]
+scatter = [[0.0, 0.02], [0.0, 0.0]]
+nu_fission = [0.0, 0.135]
+chi = [1.0, 0.0]
+
+[materials.reflector]   # region 4
+diffusion = [2.0, 0.3]
+absorption = [0.0, 0.01]
+total = [0.04, 0.01]
+scatter = [[0.0, 0.04], [0.0, 0.0]]
+
+[materials.reflector_rod]   # region 5
+diffusion = [2.0, 0.3]
+absorption = [0.0, 0.055]
+total = [0.04, 0.055]
+scatter = [[0.0, 0.04], [0.0, 0.0]]

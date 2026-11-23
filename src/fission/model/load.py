@@ -28,6 +28,7 @@ from .spec import (
     AxialSegment,
     Branches,
     Core,
+    CoreThermal,
     Isotopics,
     Lattice,
     Material,
@@ -170,6 +171,11 @@ def _element_isotopics(m: _Table) -> dict[str, Isotopics]:
 
 
 def _material(name: str, m: _Table) -> Material:
+    if m.has("table"):
+        temperature_t: Any = m.string("temperature", "moderator", ("fuel", "moderator"))
+        table = m.string("table")
+        m.finish()
+        return Material(name, temperature_t, table=table)
     if m.has("macroscopic"):
         temperature: Any = m.string("temperature", "moderator", ("fuel", "moderator"))
         macroscopic = m.string("macroscopic")
@@ -340,8 +346,9 @@ def _lattice(
         grid: tuple[tuple[str | None, ...], ...] = ((legend["fill"],) * size,) * size
     else:
         grid = _grid(t, legend)
-    if len(grid) != len(grid[0]):
-        _fail(t.at("map"), f"must be square, got {len(grid)} rows of {len(grid[0])}")
+    if gap and len(grid) != len(grid[0]):
+        _fail(t.at("map"), f"a lattice with a gap must be square, got {len(grid)} rows "
+              f"of {len(grid[0])}")  # fmt: skip
     t.finish()
     return Lattice(
         name, "square", pitch, cast(tuple[tuple[str, ...], ...], grid), gap=gap
@@ -364,6 +371,33 @@ def _assembly(name: str, t: _Table, lattices: dict[str, Lattice]) -> Assembly:
     return Assembly(name, tuple(segments))
 
 
+def _core_thermal(t: _Table) -> CoreThermal:
+    th = CoreThermal(
+        t.number("assembly_power"),
+        t.number("assembly_flow"),
+        t.number("inlet_temperature"),
+        t.number("pressure"),
+        t.number("fuel_heat_fraction"),
+        int(t.number("rods")),
+        t.number("pellet_radius"),
+        t.number("clad_inner"),
+        t.number("clad_outer"),
+        t.number("gap_conductance"),
+        t.number("rod_pitch", None),
+        t.number("flow_area", None),
+        t.number("hydraulic_diameter", None),
+    )
+    film = (th.rod_pitch, th.flow_area, th.hydraulic_diameter)
+    if any(x is None for x in film) and any(x is not None for x in film):
+        _fail(t.where, "rod_pitch, flow_area and hydraulic_diameter go together")
+    if th.fuel_heat_fraction > 1:
+        _fail(t.at("fuel_heat_fraction"), "must be at most 1")
+    if not th.pellet_radius < th.clad_inner < th.clad_outer:
+        _fail(t.where, "need pellet_radius < clad_inner < clad_outer")
+    t.finish()
+    return th
+
+
 def _core(
     t: _Table, assemblies: dict[str, Assembly], lattices: dict[str, Lattice]
 ) -> Core:
@@ -378,6 +412,9 @@ def _core(
         for side in SIDES:
             boundary[side] = b.string(side, "vacuum", ("vacuum", "reflective"))
         b.finish()
+    vacuum = t.number("vacuum_coefficient", 0.5)
+    state = t.string("state", None)
+    thermal = _core_thermal(t.table("thermal")) if t.has("thermal") else None
     legend = _legend(t)
     for key, a in legend.items():
         if a not in assemblies:
@@ -396,7 +433,8 @@ def _core(
                 _fail(t.at("assembly_pitch"), f"lattice {s.lattice!r} of assembly {a!r} "
                       f"is {width:g} cm wide, more than the assembly pitch {pitch:g} cm")  # fmt: skip
     t.finish()
-    return Core(cast(Any, geometry), cast(Any, symmetry), pitch, grid, boundary)
+    return Core(cast(Any, geometry), cast(Any, symmetry), pitch, grid, boundary, vacuum,
+                state, thermal)  # fmt: skip
 
 
 def _state(name: str, t: _Table) -> State:
@@ -511,6 +549,8 @@ def parse(data: dict[str, Any], base: Path | None = None) -> Model:
     core = _core(top.table("core"), assemblies, lattices) if top.has("core") else None
     sec = _section(top, "states")
     states = {k: _state(k, sec.table(k)) for k in sec.data}
+    if core is not None and core.state is not None and core.state not in states:
+        _fail("core.state", f"unknown state {core.state!r}")
     for mat in materials.values():
         if mat.density == "moderator" and not states:
             _fail(
@@ -525,16 +565,52 @@ def parse(data: dict[str, Any], base: Path | None = None) -> Model:
     )  # fmt: skip
 
 
-def load_model(path: str | Path) -> Model:
-    """Read and check a model file. A bare name is looked up in models/."""
+def _resolve(path: str | Path, near: Path | None = None) -> Path:
+    """A model file: as given, next to `near`, or a bare name in models/."""
     p = Path(path)
-    if not p.exists() and p.parent == Path(".") and (MODELS_DIR / p).exists():
-        p = MODELS_DIR / p
-    elif not p.exists() and (MODELS_DIR / f"{p}.toml").exists():
-        p = MODELS_DIR / f"{p}.toml"
+    for candidate in (p, (near / p) if near else None, MODELS_DIR / p,
+                      MODELS_DIR / f"{p}.toml", (near / f"{p}.toml") if near else None):  # fmt: skip
+        if candidate is not None and candidate.exists():
+            return candidate
+    return p
+
+
+def merge(base: dict, override: dict) -> dict:
+    """Tables merged key by key (recursively); any other value replaces."""
+    out = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _read(p: Path, seen: tuple[Path, ...] = ()) -> dict:
+    """The TOML of a model file, with `[model] extends = "<base model>"`
+    resolved: the base file's tables, with this file's merged over them."""
+    if p.resolve() in seen:
+        raise ModelError(f"{p.name}: model.extends: circular ({p.name} extends itself)")
+    with open(p, "rb") as f:
+        data = tomllib.load(f)
+    head = data.get("model", {})
+    if not isinstance(head, dict) or "extends" not in head:
+        return data
+    base_path = _resolve(str(head["extends"]), p.resolve().parent)
+    if not base_path.exists():
+        raise ModelError(f"model.extends: no model {head['extends']!r}")
+    base = _read(base_path, (*seen, p.resolve()))
+    data = {**data, "model": {k: v for k, v in head.items() if k != "extends"}}
+    return merge(base, data)
+
+
+def load_model(path: str | Path) -> Model:
+    """Read and check a model file. A bare name is looked up in models/.
+    A file with ``[model] extends = "<other model>"`` adds to (and overrides,
+    table by table) the other model."""
+    p = _resolve(path)
     try:
-        with open(p, "rb") as f:
-            data = tomllib.load(f)
+        data = _read(p)
         return parse(data, p.resolve().parent)
     except tomllib.TOMLDecodeError as e:
         raise ModelError(f"{p.name}: {e}") from None

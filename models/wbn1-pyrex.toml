@@ -1,0 +1,100 @@
+# Watts Bar Unit 1 cycle 1 as loaded: the three enrichment zones of
+# wbn1-zoned.toml with the Pyrex burnable absorbers of VERA Figure 9.
+#
+# Source: CASL-U-2012-0131-004 Rev. 4 (free:
+# https://corephysics.com/docs/CASL-U-2012-0131-004.pdf): Figure 9 (number
+# of Pyrex rods per assembly; their patterns are Figure 5), Table 6 and
+# Section 1.4 (the poison runs from 15.761 to 376.441 cm, the fuel stack from
+# 11.951 to 377.711 cm: 3.81 cm unpoisoned at the bottom, 1.27 cm at the
+# top). Every Pyrex pattern of an enrichment has its own lattice state
+# matrix (models/wbn1-fuel-262.toml, wbn1-fuel-310.toml). Guide tubes
+# without Pyrex hold water: the thimble plugs and the withdrawn control rods
+# are above the fuel.
+
+[model]
+extends = "wbn1-zoned"
+name = "WBN1 cycle 1 with Pyrex"
+
+[materials.fuel_262_p16]
+temperature = "fuel"
+table = "wbn1-fuel-262-p16-moc"
+[lattices.fuel_262_p16]
+material = "fuel_262_p16"
+[assemblies.b16]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_262", height = 3.81 },
+         { lattice = "fuel_262_p16", height = 360.68 }, { lattice = "fuel_262", height = 1.27 },
+         { lattice = "reflector", height = 21.5 }]
+
+[materials.fuel_262_p20]
+temperature = "fuel"
+table = "wbn1-fuel-262-p20-moc"
+[lattices.fuel_262_p20]
+material = "fuel_262_p20"
+[assemblies.b20]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_262", height = 3.81 },
+         { lattice = "fuel_262_p20", height = 360.68 }, { lattice = "fuel_262", height = 1.27 },
+         { lattice = "reflector", height = 21.5 }]
+
+[materials.fuel_262_p24]
+temperature = "fuel"
+table = "wbn1-fuel-262-p24-moc"
+[lattices.fuel_262_p24]
+material = "fuel_262_p24"
+[assemblies.b24]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_262", height = 3.81 },
+         { lattice = "fuel_262_p24", height = 360.68 }, { lattice = "fuel_262", height = 1.27 },
+         { lattice = "reflector", height = 21.5 }]
+
+[materials.fuel_310_p8]
+temperature = "fuel"
+table = "wbn1-fuel-310-p8-moc"
+[lattices.fuel_310_p8]
+material = "fuel_310_p8"
+[assemblies.c8]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_310", height = 3.81 },
+         { lattice = "fuel_310_p8", height = 360.68 }, { lattice = "fuel_310", height = 1.27 },
+         { lattice = "reflector", height = 21.5 }]
+
+[materials.fuel_310_p12]
+temperature = "fuel"
+table = "wbn1-fuel-310-p12-moc"
+[lattices.fuel_310_p12]
+material = "fuel_310_p12"
+[assemblies.c12]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_310", height = 3.81 },
+         { lattice = "fuel_310_p12", height = 360.68 }, { lattice = "fuel_310", height = 1.27 },
+         { lattice = "reflector", height = 21.5 }]
+
+[materials.fuel_310_p16]
+temperature = "fuel"
+table = "wbn1-fuel-310-p16-moc"
+[lattices.fuel_310_p16]
+material = "fuel_310_p16"
+[assemblies.c16]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_310", height = 3.81 },
+         { lattice = "fuel_310_p16", height = 360.68 }, { lattice = "fuel_310", height = 1.27 },
+         { lattice = "reflector", height = 21.5 }]
+
+[materials.fuel_310_p24]
+temperature = "fuel"
+table = "wbn1-fuel-310-p24-moc"
+[lattices.fuel_310_p24]
+material = "fuel_310_p24"
+[assemblies.c24]
+axial = [{ lattice = "reflector", height = 21.5 }, { lattice = "fuel_310", height = 3.81 },
+         { lattice = "fuel_310_p24", height = 360.68 }, { lattice = "fuel_310", height = 1.27 },
+         { lattice = "reflector", height = 21.5 }]
+
+[core]
+legend = { a = "a", b = "b", c = "c", b16 = "b16", b20 = "b20", b24 = "b24", c8 = "c8", c12 = "c12", c16 = "c16", c24 = "c24", R = "side" }
+map = """
+a   b20 a   b20 a   b20 a   c12 R
+b20 a   b24 a   b20 a   c24 c   R
+a   b24 a   b20 a   b16 a   c8  R
+b20 a   b20 a   b20 a   c16 c   R
+a   b20 a   b20 b   b24 c   R   R
+b20 a   b16 a   b24 c12 c   R   .
+a   c24 a   c16 c   c   R   R   .
+c12 c   c8  c   R   R   R   .   .
+R   R   R   R   R   .   .   .   .
+"""

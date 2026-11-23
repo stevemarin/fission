@@ -39,7 +39,7 @@ DEFAULT_LATTICE = "cell"
 # range form, LRF = 1), Cr-53 (Reich-Moore with negative J selecting the
 # channel spin). In the VERA cladding they are 1.9e-5 /b-cm (0.04% of its
 # atoms); they are left out of the mixture.
-UNSUPPORTED = frozenset({"Fe54", "Fe57", "Fe58", "Cr53"})
+UNSUPPORTED = frozenset({"Fe57", "Fe58", "Cr53", "Mn55"})
 
 
 def components(model: Model, lattice: str, state: str) -> list[Component]:

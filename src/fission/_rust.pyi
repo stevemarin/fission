@@ -182,6 +182,18 @@ def moc_sweep(
     ]
     | None = None,
 ) -> tuple[Array, Array, float, Array]: ...
+def diffusion_sweeps(
+    nz: int,
+    ny: int,
+    nx: int,
+    diag: Array,
+    coef: list[Array],
+    inside: npt.NDArray[np.uint8],
+    b: Array,
+    phi: Array,
+    count: int,
+    omega: float,
+) -> Array: ...
 def cmfd_solve(
     groups: int,
     ny: int,

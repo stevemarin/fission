@@ -132,7 +132,6 @@ def test_toy_model_parses_all_layers():
         ({"lattices__A__pitch": 0.9}, "does not fit in the pitch 0.9 cm"),
         ({"lattices__A__map": "F F\nF G F\nF F F"}, "row 2 has 3 entries, row 1 has 2"),
         ({"lattices__A__map": "F F\nF X"}, "row 2: 'X' is not in the legend"),
-        ({"lattices__A__map": "F F F\nF G F"}, "must be square"),
         ({"lattices__A__geometry": "hex"}, "'hex' is reserved but not implemented yet"),
         ({"core__symmetry": "eighth"}, "'eighth' is reserved but not implemented yet"),
         ({"core__assembly_pitch": 3.0}, "is 3.78 cm wide, more than the assembly pitch"),
@@ -260,13 +259,51 @@ def test_vera_cell(vera):
     assert areas["moderator"] / 1.26**2 == pytest.approx(0.554, abs=5e-4)
     all_comps = homogenize(vera, "cell", "1A")
     comps = components(vera, "cell", "1A")
-    assert len(all_comps) - len(comps) == 4  # Fe-54, -57, -58, Cr-53 left out
-    assert len(comps) == 35 and len({c.nuclide for c in comps}) == 34
+    assert len(all_comps) - len(comps) == 3  # Fe-57, Fe-58, Cr-53 left out
+    assert len(comps) == 36 and len({c.nuclide for c in comps}) == 35
     clad = vera.materials["clad"].atom_densities
     assert clad is not None
-    left_out = sum(clad[n] for n in UNSUPPORTED)
+    left_out = sum(clad.get(n, 0.0) for n in UNSUPPORTED)
     assert left_out < 2e-5 and left_out / sum(clad.values()) < 5e-4
     temps = {c.region: c.temperature for c in homogenize(vera, "cell", "1C")}
     assert temps == {"fuel": 900.0, "gap": 600.0, "clad": 600.0, "moderator": 600.0}
     assert vera.states["1A"].reference is not None
     assert vera.states["1A"].reference.keff == 1.187038
+
+
+def test_a_model_can_extend_another(tmp_path):
+    from fission.model import load_model
+
+    (tmp_path / "base.toml").write_text(TOML_BASE := TOY)
+    (tmp_path / "child.toml").write_text(
+        '[model]\nextends = "base"\nname = "child"\n'
+        "[materials.fuel]\natom_densities = { U235 = 1e-3, U238 = 2.2e-2, O16 = 4.6e-2 }\n"
+        "[states.hfp]\nfuel_temperature = 900.0\nmoderator_temperature = 580.0\n"
+        "moderator_density = 0.7\nboron_ppm = 1000\n"
+    )
+    m = load_model(tmp_path / "child.toml")
+    assert m.name == "child"
+    assert m.materials["fuel"].atom_densities["U235"] == 1e-3  # overridden
+    assert m.materials["clad"].atom_densities == {"Zr90": 4.3e-2}  # inherited
+    assert set(m.states) == {"hzp", "hfp"}
+    assert TOML_BASE
+
+
+def test_wbn1_enrichment_zones():
+    """The WBN1 loading pattern: 193 assemblies of three fuel types, each fuel
+    with the uranium isotopics of VERA Table 17 (U-234 = 0.007731 w^1.0837,
+    U-236 = 0.0046 w, U-238 the balance)."""
+    zoned = load_model("wbn1-zoned")
+    cells = [a for row in zoned.core.full_map() for a in row if a is not None]
+    fuel = [a for a in cells if a in "abc"]
+    assert len(fuel) == 193
+    assert set(cells) == {"a", "b", "c", "side"}
+    for name, enrichment in (("211", 2.11), ("262", 2.619), ("310", 3.1)):
+        u = load_model(f"wbn1-fuel-{name}").materials["fuel"].isotopics["U"]
+        assert u.basis == "weight"
+        assert u.percent["U235"] == enrichment
+        assert u.percent["U234"] == pytest.approx(
+            0.007731 * enrichment**1.0837, abs=6e-5
+        )
+        assert u.percent["U236"] == pytest.approx(0.0046 * enrichment, abs=6e-5)
+        assert sum(u.percent.values()) == pytest.approx(100.0, abs=1e-4)
