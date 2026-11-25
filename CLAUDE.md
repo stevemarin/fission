@@ -151,7 +151,8 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
 - `src/fission/tables/` (M3): `multilinear` (axis by axis, end segment
   extrapolates, single-node axis constant), `XSTable` (from a branch Table,
   fuel axis in sqrt(T) via `TRANSFORMS`, `without(axis, i)` for leave one
-  out, JSON write/read), `select` (greedy terms by PRESS e/(1-h), fewest
+  out, JSON write/read, `constants_at` = all nodes at once: constants
+  packed per node, Rust `tables.rs`, bitwise = `multilinear`), `select` (greedy terms by PRESS e/(1-h), fewest
   within 1% of best, one term set for all constants), `fit`, `k_infinity`.
   `branches.sample_states` / `run_states` = off-grid check points.
 - `src/fission/nodal/` (M4): `mesh.core_mesh` (model core -> [nz, ny, nx]
@@ -171,6 +172,9 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   benchmark 2003 sec. 7 properties; T_eff = 0.3 Tc + 0.7 Ts),
   `convection` (Dittus-Boelter 0.023 Re^0.8 Pr^0.4 x Presser bundle factor,
   per MOOSE docs; Re ~4.5e5 is beyond its 1.2e5 range),
+  Rust `water.rs` (IF97 T(h), density, film with the IAPWS transport
+  properties; 1e-12) and `fuel.rs` (rod) run the per-node loops
+  (`core.channels` / `rod_temperatures`, `use_rust=`).
   `core.solve` (Picard: `nodal.mesh.with_states` per-node MacroXS from
   tables, NEM warm-started (`nem.solve(start=)`), power from kappa Sigma_f,
   channel enthalpy per node column, rods; `power_level`). Material key

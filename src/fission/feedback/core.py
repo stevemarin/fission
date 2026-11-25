@@ -61,23 +61,91 @@ def node_power(mesh: CoreMesh, flux: np.ndarray, total: float) -> np.ndarray:
     return p * total / p.sum()
 
 
+def _beyond_region1(t: float) -> ValueError:
+    return ValueError(
+        f"water at {t:.1f} K: beyond IF97 region 1 (boiling is not modelled)"
+    )
+
+
 def channels(mesh: CoreMesh, power: np.ndarray, flow_per_area: float, h_in: float,
-             pressure: float) -> tuple[np.ndarray, np.ndarray]:  # fmt: skip
-    """Water temperature (K) and density (g/cm^3) at every node centre."""
+             pressure: float, use_rust: bool = True) -> tuple[np.ndarray, np.ndarray]:  # fmt: skip
+    """Water temperature (K) and density (g/cm^3) at every node centre
+    (Rust `water_temperatures` / `water_densities`, or the scalar Python
+    functions of ``water``)."""
     dx, dy, _ = mesh.widths
     area = dy[:, None] * dx[None, :]  # cm^2 per node column
     flow = flow_per_area * area  # kg/s
     below = np.cumsum(power, axis=0) - power / 2  # W up to each node centre
     h = h_in + below / flow[None]
+    if use_rust:
+        from fission import _rust
+
+        flat = np.ascontiguousarray(h, dtype=float).ravel()
+        t = _rust.water_temperatures(pressure, flat, 580.0)
+        bad = np.nonzero(~(t <= 623.15))[0]  # NaN = Newton failed
+        if len(bad):
+            n = int(bad[0])
+            if np.isnan(t[n]):
+                water.temperature(pressure, float(flat[n]))  # raises the same error
+            raise _beyond_region1(float(t[n]))
+        rho = _rust.water_densities(pressure, t) / 1000.0
+        return t.reshape(h.shape), rho.reshape(h.shape)
     t = np.zeros_like(h)
     rho = np.zeros_like(h)
     for index in np.ndindex(h.shape):
         t[index] = water.temperature(pressure, float(h[index]))
         if t[index] > 623.15:
-            raise ValueError(f"water at {t[index]:.1f} K: beyond IF97 region 1 "
-                             "(boiling is not modelled)")  # fmt: skip
-        rho[index] = water.density(pressure, t[index]) / 1000.0
+            raise _beyond_region1(float(t[index]))
+        rho[index] = water.density(pressure, float(t[index])) / 1000.0
     return t, rho
+
+
+@dataclass
+class Rods:
+    """Fuel rod data of the feedback loop (radii in m)."""
+
+    pellet_radius: float
+    clad_inner: float
+    clad_outer: float
+    gap_conductance: float
+    pressure: float
+    film: tuple[float, float, float] | None  # mass flux, D_h (m), P/D; None = no film
+
+
+def rod_temperatures(rods: Rods, q: np.ndarray, coolant: np.ndarray,
+                     use_rust: bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:  # fmt: skip
+    """Doppler and centreline temperatures (K) and film coefficients
+    (W/(m^2 K), NaN without a film) of rods at linear heat rates q (W/m)
+    over water at `coolant` (K), 1D arrays."""
+    if use_rust:
+        from fission import _rust
+
+        q, coolant = (
+            np.ascontiguousarray(q, float),
+            np.ascontiguousarray(coolant, float),
+        )
+        h = None
+        if rods.film is not None:
+            h = _rust.water_film_coefficients(rods.pressure, coolant, *rods.film)
+        centre, surface, _, _ = _rust.fuel_rods(
+            q, coolant, rods.pellet_radius, rods.clad_inner, rods.clad_outer,
+            rods.gap_conductance, h,
+        )  # fmt: skip
+        return (
+            0.3 * centre + 0.7 * surface,
+            centre,
+            np.full(len(q), np.nan) if h is None else h,
+        )
+    doppler, centre, film = (np.full(len(q), np.nan) for _ in range(3))
+    for n, (qn, t) in enumerate(zip(q, coolant, strict=True)):
+        h_film = None
+        if rods.film is not None:
+            h_film = convection.film_coefficient(rods.pressure, float(t), *rods.film)
+            film[n] = h_film
+        temps = fuel.rod(float(qn), float(t), rods.pellet_radius, rods.clad_inner,
+                         rods.clad_outer, rods.gap_conductance, h_film)  # fmt: skip
+        doppler[n], centre[n] = temps.doppler, temps.centre
+    return doppler, centre, film
 
 
 def isothermal(
@@ -134,12 +202,13 @@ def solve(model: Model, refine: int = 1, axial: float | None = None,
           tol_k: float = 1e-6, tol_t: float = 0.05, max_iterations: int = 50,
           relax: float = 1.0, power_level: float = 1.0, verbose: bool = False,
           banks: dict[str, float] | None = None,
-          boron: float | None = None) -> Result:  # fmt: skip
+          boron: float | None = None, use_rust: bool = True) -> Result:  # fmt: skip
     """Coupled NEM + thermal-hydraulics of the model's core at its
     operating conditions ([core] state and [core.thermal]); power_level
     scales the rated power (the flow stays at its rated value); banks:
     control rods inserted (bank -> steps withdrawn); boron (ppm) replaces
-    the state's."""
+    the state's. use_rust: the water, film and rod kernels in Rust (the
+    Python functions of ``water``, ``convection`` and ``fuel`` otherwise)."""
     t0 = time.perf_counter()
     core = model.core
     if core is None or core.thermal is None or core.state is None:
@@ -167,6 +236,9 @@ def solve(model: Model, refine: int = 1, axial: float | None = None,
         d_h = th.hydraulic_diameter / 100.0
         p_over_d = th.rod_pitch / (2 * th.clad_outer)
     film = np.full(shape, np.nan)
+    rods = Rods(th.pellet_radius / 100, th.clad_inner / 100, th.clad_outer / 100,
+                th.gap_conductance, th.pressure,
+                (mass_flux, d_h, p_over_d) if film_on else None)  # fmt: skip
     h_in = water.enthalpy(th.pressure, th.inlet_temperature)
     rho_in = water.density(th.pressure, th.inlet_temperature) / 1000.0
     states = {
@@ -184,26 +256,18 @@ def solve(model: Model, refine: int = 1, axial: float | None = None,
         mesh = with_states(base, states)
         r = nem.solve(mesh, start=r)  # from the previous iteration
         power = node_power(mesh, r.flux, total)
-        t_mod, rho = channels(mesh, power, flow_per_area, h_in, th.pressure)
+        t_mod, rho = channels(mesh, power, flow_per_area, h_in, th.pressure, use_rust)
         t_fuel = states["fuel_temperature"].copy()
         dx, dy, _ = mesh.widths
         area = dy[:, None] * dx[None, :]
-        for k, j, i in zip(*np.nonzero(fuel_node), strict=True):
-            q = (
-                power[k, j, i]
-                * th.fuel_heat_fraction
-                / (rods_per_area * area[j, i] * dz[k] / 100.0)
-            )  # W/m, fmt: skip
-            h_film = None
-            if film_on:
-                h_film = convection.film_coefficient(th.pressure, float(t_mod[k, j, i]),
-                                                     mass_flux, d_h, p_over_d)  # fmt: skip
-                film[k, j, i] = h_film
-            temps = fuel.rod(q, float(t_mod[k, j, i]), th.pellet_radius / 100,
-                             th.clad_inner / 100, th.clad_outer / 100, th.gap_conductance,
-                             h_film)  # fmt: skip
-            t_fuel[k, j, i] = temps.doppler
-            centre[k, j, i] = temps.centre
+        # W/m per rod, every fuel node (z, y, x order)
+        q = (power * th.fuel_heat_fraction
+             / (rods_per_area * area[None] * dz[:, None, None] / 100.0))[fuel_node]  # fmt: skip
+        t_fuel[fuel_node], centre[fuel_node], h_film = rod_temperatures(
+            rods, q, t_mod[fuel_node], use_rust
+        )
+        if film_on:
+            film[fuel_node] = h_film
         d_fuel = float(np.max(np.abs(t_fuel - states["fuel_temperature"])[fuel_node]))
         d_mod = float(np.max(np.abs(t_mod - states["moderator_temperature"])))
         states["fuel_temperature"] = np.where(

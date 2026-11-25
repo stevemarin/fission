@@ -254,16 +254,29 @@ def with_states(mesh: CoreMesh, states: dict[str, np.ndarray]) -> CoreMesh:
     from dataclasses import replace
 
     assert mesh.base is not None and mesh.tables is not None
+    from fission.model import MacroXS
+
     xs = list(mesh.xs[: len(mesh.names)])
     material = mesh.base.copy()
-    for k, j, i in zip(*np.nonzero(mesh.base >= 0), strict=True):
-        m = int(mesh.base[k, j, i])
-        table = mesh.tables.get(m)
-        if table is None:
+    # every table at all its nodes in one call (Rust), then one MacroXS per node
+    rows: dict[int, tuple[dict[str, np.ndarray], dict[tuple[int, ...], int]]] = {}
+    for m, table in mesh.tables.items():
+        where = np.nonzero(mesh.base == m)
+        if len(where[0]):
+            c = table.constants_at({a: v[where] for a, v in states.items()})  # type: ignore[attr-defined]
+            rows[m] = c, {n: r for r, n in enumerate(zip(*where, strict=True))}
+    for node in zip(*np.nonzero(mesh.base >= 0), strict=True):
+        m = int(mesh.base[node])
+        if m not in rows:
             continue
-        state = {a: float(v[k, j, i]) for a, v in states.items()}
-        material[k, j, i] = len(xs)
-        xs.append(table.macro(state, mesh.names[m]))  # type: ignore[attr-defined]
+        c, row = rows[m]
+        r = row[node]
+        material[node] = len(xs)
+        xs.append(MacroXS(
+            mesh.names[m], c["total"][r], c["sigma_a"][r], c["sigma_s"][r],
+            c["sigma_f"][r], c["nu_sigma_f"][r], c["chi"][r], c["D"][r],
+            c["kappa_sigma_f"][r], c["adf"][r] if "adf" in c else None,
+        ))  # fmt: skip
     return replace(mesh, xs=xs, material=material)
 
 

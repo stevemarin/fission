@@ -319,3 +319,82 @@ def test_diffusion_sweeps(shape):
             _sweep(diag, coef, b, ref, colour, 1.7)
     out = _rust_sweeps(diag, coef, inside, b, phi0.copy(), 3, 1.7)
     np.testing.assert_array_equal(out, ref)
+
+
+def _random_table(single_node_axis: bool):
+    from fission.model import BRANCH_AXES
+    from fission.tables import XSTable
+
+    rng = np.random.default_rng(11)
+    axes: dict[str, tuple[float, ...]] = {
+        "fuel_temperature": (293.6, 565.0, 900.0, 1500.0),
+        "moderator_temperature": (565.0,) if single_node_axis else (565.0, 600.0),
+        "moderator_density": (0.66, 0.70, 0.74),
+        "boron_ppm": (0.0, 1300.0),
+    }
+    grid = tuple(len(axes[a]) for a in BRANCH_AXES)
+    data = {k: rng.uniform(0.1, 2.0, grid + tail)
+            for k, tail in [("D", (2,)), ("total", (2,)), ("sigma_a", (2,)),
+                            ("sigma_s", (2, 2)), ("nu_sigma_f", (2,)), ("sigma_f", (2,)),
+                            ("kappa_sigma_f", (2,)), ("chi", (2,)), ("adf", (2,))]}  # fmt: skip
+    return XSTable(axes, data)
+
+
+@pytest.mark.parametrize("single_node_axis", [False, True])
+def test_table_multilinear(single_node_axis):
+    """Batched table interpolation (packed constants, one Rust call) equals
+    the per-point Python `constants` bit for bit, inside the grid and in
+    the extrapolated end segments."""
+    from fission.model import BRANCH_AXES
+
+    table = _random_table(single_node_axis)
+    rng = np.random.default_rng(3)
+    shape = (3, 4, 5)
+    states = {
+        "fuel_temperature": rng.uniform(250.0, 1800.0, shape),
+        "moderator_temperature": rng.uniform(540.0, 620.0, shape),
+        "moderator_density": rng.uniform(0.6, 0.78, shape),
+        "boron_ppm": rng.uniform(-100.0, 1500.0, shape),
+    }
+    states["fuel_temperature"][0, 0, 0] = 900.0  # exactly on a node
+    fast_ = table.constants_at(states)
+    slow = table.constants_at(states, use_rust=False)
+    for index in np.ndindex(shape):
+        ref = table.constants({a: float(states[a][index]) for a in BRANCH_AXES})
+        for k, v in ref.items():
+            np.testing.assert_array_equal(fast_[k][index], v)
+            np.testing.assert_array_equal(slow[k][index], v)
+
+
+def test_water_and_rods():
+    """IF97 region 1 (T of h, density), the Dittus-Boelter film with the
+    IAPWS transport properties, and the fuel rod temperatures: Rust vs the
+    scalar Python functions (sums in a different order: 1e-12)."""
+    from fission.feedback import convection, fuel, water
+
+    rng = np.random.default_rng(5)
+    p = 15.5e6
+    t = rng.uniform(290.0, 620.0, 200)
+    h = np.array([water.enthalpy(p, x) for x in t])
+    t_rust = _rust.water_temperatures(p, h, 580.0)
+    np.testing.assert_allclose(t_rust, [water.temperature(p, x) for x in h], rtol=1e-13)
+    np.testing.assert_allclose(
+        _rust.water_densities(p, t), [water.density(p, x) for x in t], rtol=1e-12
+    )
+    for pod in (None, 1.326):
+        ref = [convection.film_coefficient(p, x, 3500.0, 0.0118, pod) for x in t]
+        out = _rust.water_film_coefficients(p, t, 3500.0, 0.0118, pod)
+        np.testing.assert_allclose(out, ref, rtol=1e-12)
+    q = rng.uniform(0.0, 4e4, 200)
+    film = rng.uniform(3e4, 5e4, 200)
+    radii = (0.0041, 0.00418, 0.00475, 1e4)
+    for f in (None, film):
+        out = _rust.fuel_rods(q, t, *radii, f)
+        for n in range(len(q)):
+            ref = fuel.rod(q[n], t[n], *radii, None if f is None else f[n])
+            np.testing.assert_allclose(
+                [o[n] for o in out],
+                [ref.centre, ref.surface, ref.clad_inner, ref.clad_outer], rtol=1e-13,
+            )  # fmt: skip
+    # Newton that cannot converge (enthalpy far above region 1) gives NaN
+    assert np.isnan(_rust.water_temperatures(p, np.array([1e8]), 580.0)[0])

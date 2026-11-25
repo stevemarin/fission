@@ -213,3 +213,24 @@ def cmfd_solve(
     inner: int = 4,
     omega: float = 1.5,
 ) -> tuple[float, Array, int]: ...
+def table_multilinear(
+    nodes: list[Array], values: Array, m: int, points: Array
+) -> Array: ...
+def water_temperatures(p: float, h: Array, guess: float) -> Array: ...
+def water_densities(p: float, t: Array) -> Array: ...
+def water_film_coefficients(
+    p: float,
+    t: Array,
+    mass_flux: float,
+    diameter: float,
+    pitch_over_diameter: float | None = None,
+) -> Array: ...
+def fuel_rods(
+    q: Array,
+    coolant: Array,
+    pellet_radius: float,
+    clad_inner: float,
+    clad_outer: float,
+    gap_conductance: float,
+    film: Array | None = None,
+) -> tuple[Array, Array, Array, Array]: ...

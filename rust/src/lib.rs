@@ -9,6 +9,7 @@ pub mod complex;
 pub mod diffusion;
 pub mod doppler;
 pub mod fsum;
+pub mod fuel;
 pub mod gauss;
 pub mod groupr;
 pub mod infinite;
@@ -22,8 +23,10 @@ pub mod reich_moore;
 pub mod slowing;
 pub mod spin_groups;
 pub mod tab1;
+pub mod tables;
 pub mod thermal;
 pub mod transfer;
+pub mod water;
 
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::prelude::*;
@@ -952,6 +955,113 @@ fn k_constant() -> f64 {
     channel::k_constant()
 }
 
+/// Multilinear interpolation of a table at many points (port of
+/// `fission.tables.multilinear`): nodes per axis, values flattened
+/// [n_0, ..., n_d-1, m], points flattened [p, d]. Returns [p, m] flattened.
+#[pyfunction]
+fn table_multilinear<'py>(
+    py: Python<'py>,
+    nodes: Vec<PyReadonlyArray1<'py, f64>>,
+    values: PyReadonlyArray1<'py, f64>,
+    m: usize,
+    points: PyReadonlyArray1<'py, f64>,
+) -> PyResult<Array<'py>> {
+    let axes: Vec<&[f64]> = nodes.iter().map(|a| a.as_slice()).collect::<Result<_, _>>()?;
+    let (values, points) = (values.as_slice()?, points.as_slice()?);
+    let size: usize = axes.iter().map(|a| a.len()).product::<usize>() * m;
+    if axes.is_empty() || axes.iter().any(|a| a.is_empty()) || values.len() != size
+        || points.len() % axes.len() != 0
+    {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "values must be the grid times m, points a multiple of the axis count",
+        ));
+    }
+    let out = py.detach(|| tables::multilinear(&axes, values, m, points));
+    Ok(out.into_pyarray(py))
+}
+
+/// Water temperatures (K) of enthalpies h (J/kg) at pressure p (Pa), IF97
+/// region 1 by Newton from `guess` (`feedback.water.temperature`); NaN where
+/// Newton does not converge.
+#[pyfunction]
+fn water_temperatures<'py>(
+    py: Python<'py>,
+    p: f64,
+    h: PyReadonlyArray1<'py, f64>,
+    guess: f64,
+) -> PyResult<Array<'py>> {
+    let h = h.as_slice()?;
+    let out: Vec<f64> = py.detach(|| {
+        h.iter().map(|&x| water::temperature(p, x, guess).unwrap_or(f64::NAN)).collect()
+    });
+    Ok(out.into_pyarray(py))
+}
+
+/// Water densities (kg/m^3) at p (Pa) and temperatures t (K).
+#[pyfunction]
+fn water_densities<'py>(
+    py: Python<'py>,
+    p: f64,
+    t: PyReadonlyArray1<'py, f64>,
+) -> PyResult<Array<'py>> {
+    let out: Vec<f64> = t.as_slice()?.iter().map(|&x| water::density(p, x)).collect();
+    Ok(out.into_pyarray(py))
+}
+
+/// Dittus-Boelter clad-to-water coefficients (W/(m^2 K)) at p (Pa) and
+/// water temperatures t (K) (`feedback.convection.film_coefficient`).
+#[pyfunction]
+#[pyo3(signature = (p, t, mass_flux, diameter, pitch_over_diameter=None))]
+fn water_film_coefficients<'py>(
+    py: Python<'py>,
+    p: f64,
+    t: PyReadonlyArray1<'py, f64>,
+    mass_flux: f64,
+    diameter: f64,
+    pitch_over_diameter: Option<f64>,
+) -> PyResult<Array<'py>> {
+    let t = t.as_slice()?;
+    let out: Vec<f64> = py.detach(|| {
+        t.iter()
+            .map(|&x| water::film_coefficient(p, x, mass_flux, diameter, pitch_over_diameter))
+            .collect()
+    });
+    Ok(out.into_pyarray(py))
+}
+
+/// Fuel rod temperatures for linear heat rates q (W/m), coolant
+/// temperatures (K) and optional film coefficients (`feedback.fuel.rod`);
+/// radii in metres. Returns (centre, pellet surface, clad inner, clad outer).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (q, coolant, pellet_radius, clad_inner, clad_outer, gap_conductance, film=None))]
+fn fuel_rods<'py>(
+    py: Python<'py>,
+    q: PyReadonlyArray1<'py, f64>,
+    coolant: PyReadonlyArray1<'py, f64>,
+    pellet_radius: f64,
+    clad_inner: f64,
+    clad_outer: f64,
+    gap_conductance: f64,
+    film: Option<PyReadonlyArray1<'py, f64>>,
+) -> PyResult<(Array<'py>, Array<'py>, Array<'py>, Array<'py>)> {
+    let (q, coolant) = (q.as_slice()?, coolant.as_slice()?);
+    let film = film.as_ref().map(|f| f.as_slice()).transpose()?;
+    if coolant.len() != q.len() || film.is_some_and(|f| f.len() != q.len()) {
+        return Err(pyo3::exceptions::PyValueError::new_err("q, coolant and film differ in length"));
+    }
+    let rod = fuel::Rod { pellet_radius, clad_inner, clad_outer, gap_conductance };
+    let mut out: [Vec<f64>; 4] = Default::default();
+    for (n, (&qn, &c)) in q.iter().zip(coolant).enumerate() {
+        let temps = fuel::rod(&rod, qn, c, film.map(|f| f[n]));
+        for (o, t) in out.iter_mut().zip(temps) {
+            o.push(t);
+        }
+    }
+    let [a, b, c, d] = out;
+    Ok((a.into_pyarray(py), b.into_pyarray(py), c.into_pyarray(py), d.into_pyarray(py)))
+}
+
 #[pymodule]
 fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -978,5 +1088,10 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(doppler_evaluate, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_thin, m)?)?;
     m.add_function(wrap_pyfunction!(doppler_broaden_table, m)?)?;
+    m.add_function(wrap_pyfunction!(table_multilinear, m)?)?;
+    m.add_function(wrap_pyfunction!(water_temperatures, m)?)?;
+    m.add_function(wrap_pyfunction!(water_densities, m)?)?;
+    m.add_function(wrap_pyfunction!(water_film_coefficients, m)?)?;
+    m.add_function(wrap_pyfunction!(fuel_rods, m)?)?;
     Ok(())
 }

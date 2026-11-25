@@ -60,6 +60,19 @@ def coordinate(axis: str, value: float, transforms: dict[str, str]) -> float:
     raise ValueError(f"unknown transform {kind!r} for {axis}")
 
 
+def _coordinates(
+    axis: str, values: np.ndarray, transforms: dict[str, str]
+) -> np.ndarray:
+    """`coordinate` of an array of values (np.sqrt is correctly rounded, so
+    elementwise equal to the scalar version)."""
+    kind = transforms.get(axis, "linear")
+    if kind == "sqrt":
+        return np.sqrt(values)
+    if kind == "linear":
+        return values
+    raise ValueError(f"unknown transform {kind!r} for {axis}")
+
+
 def multilinear(
     nodes: list[np.ndarray], values: np.ndarray, x: list[float]
 ) -> np.ndarray:
@@ -135,6 +148,48 @@ class XSTable:
 
     def constants(self, state) -> dict[str, np.ndarray]:
         return {k: self(k, state) for k in KEYS if k in self.data}
+
+    def constants_at(
+        self, states: dict[str, np.ndarray], use_rust: bool = True
+    ) -> dict[str, np.ndarray]:
+        """The constants at many states at once: states maps each of
+        BRANCH_AXES to an array (any common shape S); returns key -> S + the
+        constant's shape. Equal bit for bit to `constants` at each point.
+
+        All the constants of a node are packed side by side into one vector
+        (interpolation is elementwise, so packing changes nothing), and the
+        Rust kernel interpolates that vector at every point in one call; the
+        Python path loops over the points with `multilinear`."""
+        shape = np.shape(states[BRANCH_AXES[0]])
+        x = np.stack(
+            [np.ravel(_coordinates(a, np.asarray(states[a], dtype=float), self.transforms))
+             for a in BRANCH_AXES], axis=-1,
+        )  # fmt: skip
+        keys = [k for k in KEYS if k in self.data]
+        grid = self.shape
+        tails = [self.data[k].shape[len(grid) :] for k in keys]
+        packed = np.concatenate(
+            [self.data[k].reshape(*grid, -1) for k in keys], axis=-1
+        )
+        nodes = self.nodes()
+        if use_rust:
+            from fission import _rust
+
+            flat = _rust.table_multilinear(
+                nodes, np.ascontiguousarray(packed).ravel(), packed.shape[-1],
+                np.ascontiguousarray(x).ravel(),
+            )  # fmt: skip
+            rows = flat.reshape(len(x), packed.shape[-1])
+        else:
+            rows = np.array([multilinear(nodes, packed, list(p)) for p in x])
+            rows = rows.reshape(len(x), packed.shape[-1])
+        out = {}
+        start = 0
+        for k, tail in zip(keys, tails, strict=True):
+            size = int(np.prod(tail, dtype=int))
+            out[k] = rows[:, start : start + size].reshape(*shape, *tail)
+            start += size
+        return out
 
     def macro(self, state, name: str = "table"):
         """The constants at a state as a ``model.MacroXS`` (for the nodal code)."""
