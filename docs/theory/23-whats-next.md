@@ -37,10 +37,12 @@ remains.
   B-10 burns during the cycle, which needs depletion. Their worth is
   1.1–1.2% weaker than KENO's, and the rod gets no shielding of its own.
 * **Control rods, further.** Chapter 22's bank worths agree with KENO
-  within −7..+5% (total −1.7%). What is left out: a boron axis in the
-  tables, so that critical boron and the 1170 ppm of the rod-worth
-  measurements can be computed directly; a full-core (or rotational)
-  quarter, for banks SC and SD; and face-dependent discontinuity factors.
+  within −7..+5% (total −1.7%). The tables now have a boron axis
+  (1000/1300 ppm) and the critical boron is searched directly (1291.6 ppm
+  against the measured 1291). What is left out: more boron nodes for
+  states outside 1000–1300 ppm (a core without burnable absorbers, the
+  end of a cycle near 0 ppm); a full-core (or rotational) quarter, for
+  banks SC and SD; and face-dependent discontinuity factors.
   The reflector's factor belongs to its fuel face, but NEM applies it on
   every face of the node, the outer vacuum face too. The axial mesh is
   cut at every rod tip, so a partly inserted rod causes no cusping, at

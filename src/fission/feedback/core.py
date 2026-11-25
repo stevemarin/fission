@@ -24,7 +24,7 @@ line); there is no cross flow between channels.
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -86,18 +86,20 @@ def isothermal(
     refine: int = 1,
     axial: float | None = None,
     banks: dict[str, float] | None = None,
+    boron: float | None = None,
 ) -> list[float]:
     """k of the core at zero power with fuel and water all at one
     temperature T (water density from IF97 at the core pressure, boron
-    from the [core] state), for each T. The slope of the reactivity is the
-    isothermal temperature coefficient that start-up tests measure. The
-    reflector keeps its fixed constants. banks: control rods inserted
-    (bank -> steps withdrawn)."""
+    from the [core] state unless given, ppm), for each T. The slope of the
+    reactivity is the isothermal temperature coefficient that start-up
+    tests measure. The reflector keeps its fixed constants. banks: control
+    rods inserted (bank -> steps withdrawn)."""
     core = model.core
     if core is None or core.thermal is None or core.state is None:
         raise ValueError("the core needs [core] state = ... and [core.thermal]")
     base = core_mesh(model, refine, axial, banks)
-    boron = model.states[core.state].boron_ppm
+    if boron is None:
+        boron = model.states[core.state].boron_ppm
     out = []
     for t in temperatures:
         rho = water.density(core.thermal.pressure, t) / 1000.0
@@ -111,8 +113,8 @@ def isothermal(
     return out
 
 
-def bank_worths(model: Model, refine: int = 1, axial: float | None = None
-                ) -> tuple[float, dict[str, float]]:  # fmt: skip
+def bank_worths(model: Model, refine: int = 1, axial: float | None = None,
+                boron: float | None = None) -> tuple[float, dict[str, float]]:  # fmt: skip
     """Worth (pcm) of each control rod bank of the model, fully inserted
     alone, at zero power with fuel and water at the inlet temperature:
     rho(all rods out) - rho(bank in). Returns (k all rods out, worths)."""
@@ -120,10 +122,10 @@ def bank_worths(model: Model, refine: int = 1, axial: float | None = None
     if core is None or core.banks is None or core.thermal is None:
         raise ValueError("needs [core.banks] and [core.thermal]")
     t = [core.thermal.inlet_temperature]
-    k_out = isothermal(model, t, refine, axial)[0]
+    k_out = isothermal(model, t, refine, axial, boron=boron)[0]
     worths = {}
     for bank in core.banks.positions:
-        k_in = isothermal(model, t, refine, axial, {bank: 0.0})[0]
+        k_in = isothermal(model, t, refine, axial, {bank: 0.0}, boron)[0]
         worths[bank] = 1e5 * (1 / k_in - 1 / k_out)
     return k_out, worths
 
@@ -131,11 +133,13 @@ def bank_worths(model: Model, refine: int = 1, axial: float | None = None
 def solve(model: Model, refine: int = 1, axial: float | None = None,
           tol_k: float = 1e-6, tol_t: float = 0.05, max_iterations: int = 50,
           relax: float = 1.0, power_level: float = 1.0, verbose: bool = False,
-          banks: dict[str, float] | None = None) -> Result:  # fmt: skip
+          banks: dict[str, float] | None = None,
+          boron: float | None = None) -> Result:  # fmt: skip
     """Coupled NEM + thermal-hydraulics of the model's core at its
     operating conditions ([core] state and [core.thermal]); power_level
     scales the rated power (the flow stays at its rated value); banks:
-    control rods inserted (bank -> steps withdrawn)."""
+    control rods inserted (bank -> steps withdrawn); boron (ppm) replaces
+    the state's."""
     t0 = time.perf_counter()
     core = model.core
     if core is None or core.thermal is None or core.state is None:
@@ -169,7 +173,7 @@ def solve(model: Model, refine: int = 1, axial: float | None = None,
         "fuel_temperature": np.full(shape, state.fuel_temperature),
         "moderator_temperature": np.full(shape, th.inlet_temperature),
         "moderator_density": np.full(shape, rho_in),
-        "boron_ppm": np.full(shape, state.boron_ppm),
+        "boron_ppm": np.full(shape, state.boron_ppm if boron is None else boron),
     }
     history = []
     centre = np.full(shape, np.nan)
@@ -219,3 +223,30 @@ def solve(model: Model, refine: int = 1, axial: float | None = None,
     assert set(states) == set(BRANCH_AXES)
     return Result(r.k, r.flux, power, states, centre, film, mesh, history,
                   time.perf_counter() - t0)  # fmt: skip
+
+
+def critical_boron(
+    k_of: Callable[[float], float],
+    start: tuple[float, float] = (1000.0, 1300.0),
+    tol: float = 0.05,
+    max_iterations: int = 20,
+) -> tuple[float, float, int]:
+    """The boron concentration (ppm) that makes k_of(boron) = 1.
+
+    Secant iteration on the reactivity rho = 1 - 1/k, which is close to
+    linear in boron: soluble boron is a thin 1/v absorber spread through
+    the water, and over a few hundred ppm its worth per ppm barely changes
+    (the tables interpolate it linearly between their boron nodes). Stops
+    when the step is below tol ppm. Returns (boron, k there, solves)."""
+    b0, b1 = start
+    r0, r1 = 1 - 1 / k_of(b0), 1 - 1 / (k := k_of(b1))
+    for n in range(3, max_iterations + 3):
+        b2 = b1 - r1 * (b1 - b0) / (r1 - r0)
+        b0, r0 = b1, r1
+        k = k_of(b2)
+        b1, r1 = b2, 1 - 1 / k
+        if abs(b1 - b0) < tol:
+            return b1, k, n
+    raise RuntimeError(
+        f"no critical boron after {max_iterations} steps (last {b1:.1f} ppm)"
+    )

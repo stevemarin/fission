@@ -183,10 +183,33 @@ def header(model: Model, branches: Branches, lattice: str, solver: str,
     }
 
 
+RUN_KEYS = ("format", "model", "branches", "lattice", "solver", "options",
+            "spectrum", "cuts_eV")  # fmt: skip
+
+
 def _same_run(a: dict, b: dict) -> bool:
-    keys = ("format", "model", "branches", "lattice", "solver", "options",
-            "spectrum", "cuts_eV", "axes")  # fmt: skip
-    return all(a.get(k) == b.get(k) for k in keys)
+    return all(a.get(k) == b.get(k) for k in (*RUN_KEYS, "axes"))
+
+
+def _carry_over(old: Table, head: dict, branches: Branches) -> Table:
+    """The points of `old` that lie on the grid of `head`, re-indexed.
+
+    Same settings, other axes (a value added to an axis, say): every old
+    point whose state is a point of the new grid is reused, so extending a
+    matrix costs only the new points."""
+    table = Table(head, {})
+    if not all(old.header.get(k) == head.get(k) for k in RUN_KEYS):
+        return table
+    by_state = {
+        tuple(p["state"][a] for a in BRANCH_AXES): p for p in old.points.values()
+    }
+    for index, state in _indexed(branches):
+        record = by_state.get(tuple(getattr(state, a) for a in BRANCH_AXES))
+        if record is not None:
+            table.points[index] = {**record, "index": list(index)}
+    if table.points:
+        table.header["boundaries_eV"] = old.header.get("boundaries_eV")
+    return table
 
 
 def run_matrix(
@@ -204,7 +227,8 @@ def run_matrix(
     """Run every point of ``model.branches[name]`` that is not in `path` yet.
 
     The table is rewritten after every point, so an interrupted run resumes
-    where it stopped (unless the settings changed, or `fresh`). The shaped
+    where it stopped (unless the settings changed, or `fresh`). If only the
+    axes changed, the old points on the new grid are kept. The shaped
     libraries of a point are deleted after it, unless `keep_libraries`:
     every point has its own self-shielding, so they would only fill the
     cache (about 2 MB per nuclide and point)."""
@@ -217,8 +241,7 @@ def run_matrix(
     table = Table(head, {})
     if path is not None and path.exists() and not fresh:
         old = Table.read(path)
-        if _same_run(old.header, head):
-            table = old
+        table = old if _same_run(old.header, head) else _carry_over(old, head, branches)
     for index, state in _indexed(branches):
         if index in table.points:
             continue

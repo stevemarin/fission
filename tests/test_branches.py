@@ -99,6 +99,23 @@ def test_driver_fills_the_grid_and_resumes(tmp_path, fake_solver):
     assert len(fake_solver) == 18
 
 
+def test_extending_an_axis_reuses_the_old_points(tmp_path, fake_solver):
+    """A boron value added to a finished matrix: only the new points run,
+    and the old ones move to their new indices."""
+    path = tmp_path / "table.json"
+    one = {**MATRIX, "boron_ppm": [1300.0]}
+    old = branches.run_matrix(parse(toy(branches={"doppler": one})), "doppler",
+                              cuts=(0.625,), path=path)  # fmt: skip
+    assert len(fake_solver) == 3
+    new = branches.run_matrix(parse(toy(branches={"doppler": MATRIX})), "doppler",
+                              cuts=(0.625,), path=path)  # fmt: skip
+    assert len(fake_solver) == 6 and new.complete
+    assert all(name.endswith("-0") for name in fake_solver[3:])  # 0 ppm only
+    np.testing.assert_array_equal(new.array("k_infinity")[..., 1],
+                                  old.array("k_infinity")[..., 0])  # fmt: skip
+    assert new.points[(2, 0, 0, 1)]["index"] == [2, 0, 0, 1]
+
+
 def test_coefficients_are_differences_around_the_base(fake_solver):
     m = parse(toy(branches={"doppler": MATRIX}))
     table = branches.run_matrix(m, "doppler", cuts=(0.625,))

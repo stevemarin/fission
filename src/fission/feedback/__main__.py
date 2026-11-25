@@ -16,14 +16,16 @@ from fission.model import load_model
 from fission.nodal.__main__ import assembly_powers
 from fission.nodal.mesh import parse_banks
 
-from .core import bank_worths, isothermal, solve
+from .core import bank_worths, critical_boron, isothermal, solve
 
 
-def bank_worth_report(model, refine: int = 1, axial: float | None = None) -> str:
+def bank_worth_report(
+    model, refine: int = 1, axial: float | None = None, boron: float | None = None
+) -> str:
     """Bank worths against the model's measured and reference values."""
     core = model.core
     assert core is not None and core.banks is not None
-    k_out, worths = bank_worths(model, refine, axial)
+    k_out, worths = bank_worths(model, refine, axial, boron)
     b = core.banks
     lines = [f"{model.name}: all rods out k = {k_out:.6f} (zero power, inlet temperature)",
              f"  bank   worth (pcm)   reference   measured   ({b.source})"]  # fmt: skip
@@ -53,15 +55,19 @@ def main(argv: list[str] | None = None) -> None:
                     help="insert a control rod bank (steps withdrawn, default 0 = fully in)")  # fmt: skip
     ap.add_argument("--bank-worths", action="store_true",
                     help="worth of each bank fully inserted, at zero power (inlet temperature)")  # fmt: skip
+    ap.add_argument("--boron", type=float, default=None,
+                    help="soluble boron (ppm) instead of the [core] state's")  # fmt: skip
+    ap.add_argument("--critical-boron", action="store_true",
+                    help="search the boron that makes k = 1 (at --power, with --bank)")  # fmt: skip
     args = ap.parse_args(argv)
     model = load_model(args.model)
     banks = parse_banks(args.bank)
     if args.bank_worths:
-        print(bank_worth_report(model, args.refine, args.axial))
+        print(bank_worth_report(model, args.refine, args.axial, args.boron))
         return
     if args.itc:
         temps = (560.0, 565.0, 570.0)
-        ks = isothermal(model, temps, args.refine, args.axial, banks)
+        ks = isothermal(model, temps, args.refine, args.axial, banks, args.boron)
         for t, k in zip(temps, ks, strict=True):
             print(f"{model.name}: T = {t:.1f} K (fuel and water), k = {k:.6f}")
         itc = 1e5 * (1 / ks[0] - 1 / ks[-1]) / (temps[-1] - temps[0])
@@ -69,6 +75,17 @@ def main(argv: list[str] | None = None) -> None:
             f"  isothermal temperature coefficient: {itc:+.2f} pcm/K = {itc / 1.8:+.2f} pcm/F"
         )
         return
+    boron = args.boron
+    if args.critical_boron:
+
+        def k_of(ppm: float) -> float:
+            k = solve(model, args.refine, args.axial, power_level=args.power,
+                      banks=banks, boron=ppm).k  # fmt: skip
+            print(f"  boron {ppm:8.2f} ppm: k = {k:.6f}", flush=True)
+            return k
+
+        boron, _, n = critical_boron(k_of)
+        print(f"{model.name}: critical boron {boron:.1f} ppm ({n} core solves)")
     r = solve(
         model,
         args.refine,
@@ -76,6 +93,7 @@ def main(argv: list[str] | None = None) -> None:
         power_level=args.power,
         verbose=True,
         banks=banks,
+        boron=boron,
     )
     mesh = r.mesh
     fuel = mesh.field(lambda x: x.nu_fission).sum(axis=0) > 0

@@ -12,6 +12,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 # the same matrix for every Pyrex pattern this enrichment has in WBN1 (Figure 9)
 
@@ -21,6 +22,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 [branches.p12]
 lattice = "pyrex_12"
@@ -28,6 +30,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 [branches.p16]
 lattice = "pyrex_16"
@@ -35,6 +38,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 [branches.p24]
 lattice = "pyrex_24"
@@ -42,6 +46,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 # control rods: every guide tube rodded (an RCCA position of Figure 10).
 # The hybrid rod is Ag-In-Cd in its lower 101.6 cm and B4C above (Table 8),
@@ -53,6 +58,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 [branches.b4c]
 lattice = "b4c_24"
@@ -60,3 +66,4 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]

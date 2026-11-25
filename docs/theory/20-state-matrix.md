@@ -77,8 +77,10 @@ the fission source exactly, $\sum_i \chi_i P_i = \chi \sum_i P_i$, so the
 constants have the solver's $k_\infty$ (to 10⁻¹⁵).
 
 The table is rewritten after every point, so an interrupted run resumes
-where it stopped. A change of solver, options, spectrum or axes starts a
-new table. The self-shielded libraries of a point are deleted after it:
+where it stopped. A change of solver, options or spectrum starts a new
+table. A change of the axes alone keeps every old point whose state lies
+on the new grid (`branches._carry_over`): adding a second boron value to a
+finished 2 × 2 × 2 matrix runs only the 8 new points, not 16. The self-shielded libraries of a point are deleted after it:
 every point has its own flux shape, so they would only fill the cache with
 about 2 MB per nuclide and point.
 

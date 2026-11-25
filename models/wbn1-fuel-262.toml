@@ -6,7 +6,8 @@
 # enrichments 2.11, 2.619 and 3.10 of the three WBN1 regions, and the
 # isotopics of Table 17 (U-234 = 0.007731 w^1.0837, U-236 = 0.0046 w,
 # U-238 the balance, w in weight percent). Everything else is problem 2.
-# The state matrix (M2) is the one a core at 1300 ppm needs (chapter 22).
+# The state matrix (M2) is the one a core near 1300 ppm needs (chapter 22):
+# two boron values, 1000 and 1300 ppm, for the critical boron search.
 
 [model]
 extends = "vera-p2-rods"   # vera-p2 + Pyrex patterns (Figure 5) + control rods
@@ -21,6 +22,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 # the same matrix for every Pyrex pattern this enrichment has in WBN1 (Figure 9)
 
@@ -30,6 +32,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 [branches.p20]
 lattice = "pyrex_20"
@@ -37,6 +40,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 [branches.p24]
 lattice = "pyrex_24"
@@ -44,6 +48,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 # control rods: every guide tube rodded (an RCCA position of Figure 10).
 # The hybrid rod is Ag-In-Cd in its lower 101.6 cm and B4C above (Table 8),
@@ -55,6 +60,7 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]
 
 [branches.b4c]
 lattice = "b4c_24"
@@ -62,3 +68,4 @@ base = "2B"
 fuel_temperature = [600.0, 900.0]
 moderator_temperature = [565.0, 600.0]
 moderator_density = [0.661, 0.743]
+boron_ppm = [1000.0, 1300.0]

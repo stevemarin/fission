@@ -287,3 +287,73 @@ def test_isothermal_is_the_zero_power_limit(tmp_path):
     # the synthetic fuel is overmoderated (its thermal absorption, water and
     # boron, scales with the density): the isothermal coefficient is positive
     assert k_cold < k_inlet < k_hot
+
+
+def test_critical_boron_secant():
+    """rho linear in boron: the secant lands on it in one step; a little
+    curvature costs a few more."""
+    from fission.feedback.core import critical_boron
+
+    def linear(ppm):
+        return 1 / (1 - (0.05 - 1e-4 * ppm))  # critical at 500 ppm
+
+    b, k, n = critical_boron(linear)
+    assert b == pytest.approx(500.0, abs=1e-9) and k == pytest.approx(1.0)
+    assert n == 4  # two starting points, the exact step, the confirming one
+
+    def curved(ppm):
+        return 1 / (1 - (0.05 - 1e-4 * ppm + 2e-8 * ppm**2))
+
+    b, k, _ = critical_boron(curved, tol=1e-6)
+    assert 1 - 1 / k == pytest.approx(0.0, abs=1e-12)
+
+
+def test_critical_boron_of_the_core(tmp_path):
+    """The synthetic core made critical by its boron, at zero power."""
+    from fission.feedback.core import critical_boron, solve
+
+    _table(tmp_path / "fuel.json", True)
+    _table(tmp_path / "reflector.json", False)
+    (tmp_path / "core.toml").write_text(
+        CORE.format(fuel=tmp_path / "fuel.json", reflector=tmp_path / "reflector.json")
+    )
+    model = load_model(tmp_path / "core.toml")
+
+    def k_of(ppm):
+        return solve(model, axial=20.0, power_level=1e-7, boron=ppm).k
+
+    b, k, _ = critical_boron(k_of)
+    assert k == pytest.approx(1.0, abs=1e-5)
+    # more boron, lower k: the answer brackets as it should
+    assert k_of(b + 50) < 1 < k_of(b - 50)
+
+
+def test_zppt_cases_reproduce_the_keno_results():
+    """The KENO eigenvalues of Table P5-6, differenced as VERA does, give
+    the KENO column of Table P5-7 (a check of the transcribed cases)."""
+    from fission.feedback.zppt import CASES, derived
+
+    d = derived({n: c.keno for n, c in CASES.items()})
+    table_p5_7 = {"A": 898, "B": 875, "C": 984, "D": 1386, "SA": 447, "SB": 1066,
+                  "SC": 499, "SD": 499}  # fmt: skip
+    for bank, worth in table_p5_7.items():
+        assert d[bank] == pytest.approx(worth, abs=1.0)
+    assert d["DBW"] == pytest.approx(-10.21, abs=0.01)
+    assert d["ITC"] == pytest.approx(-3.18, abs=0.02)
+    assert len(CASES) == 32
+
+
+def test_zppt_runs_the_cases_on_a_core(tmp_path):
+    """Each case is the isothermal core at its own boron and temperature."""
+    from fission.feedback.core import isothermal
+    from fission.feedback.zppt import CASES, run
+
+    _table(tmp_path / "fuel.json", True)
+    _table(tmp_path / "reflector.json", False)
+    (tmp_path / "core.toml").write_text(
+        CORE.format(fuel=tmp_path / "fuel.json", reflector=tmp_path / "reflector.json")
+    )
+    model = load_model(tmp_path / "core.toml")
+    k = run(model, {n: CASES[n] for n in (2, 20)}, axial=20.0)
+    assert k[2] == isothermal(model, [565.0], axial=20.0, boron=1291.0)[0]
+    assert k[20] == isothermal(model, [560.0], axial=20.0, boron=1291.0)[0]

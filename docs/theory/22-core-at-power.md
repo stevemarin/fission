@@ -528,11 +528,10 @@ Pyrex map is in `models/wbn1-pyrex.toml`):
 ```
 
 * **Critical at 1300 ppm.** The rods are worth −7878 pcm in the core at
-  zero power, and $k$ falls from 1.08451 to 0.99915. Our tables have no
-  boron axis, so the code cannot search the critical boron itself. With the
-  measured differential boron worth, −10.77 pcm/ppm [[VERA](#ref-vera)
-  Table P5-7], the −85 pcm at 1300 ppm is made up by 8 ppm less boron: a
-  predicted critical boron of 1292 ppm against the measured 1291. That is
+  zero power, and $k$ falls from 1.08451 to 0.99915. The −85 pcm at 1300
+  ppm is made up by 8 ppm less boron: the search of "Soluble boron" below
+  finds a critical boron of **1291.6 ppm**, against the measured 1291
+  [[VERA](#ref-vera) Table 18]. That is
   closer than the model deserves. It has no spacer grids, no nozzles, a
   smeared baffle and assembly constants that are −193 pcm off in 2B and
   1.1% weak in the Pyrex, and some of these errors cancel. (Before the
@@ -685,7 +684,7 @@ of the fuel and the B₄C the rest.
 powers of this core at its initial criticality: 1285 ppm, bank D at 167
 steps, everything else out (Figure P5-6). `make feedback
 FEEDBACK_MODEL=wbn1-rods` at zero power with `--bank D=167` (at 1300
-ppm, the tables have no boron axis) gives the same map with a clear tilt.
+ppm, before the tables had a boron axis) gives the same map with a clear tilt.
 The centre assemblies are 8% low, the edge ones up to 13% high, RMS 6.0%.
 The tilt is the same at 2×2 nodes per assembly, so it is not the nodal
 mesh. Nor is it the assembly constants, which match KENO within 0.2% in
@@ -763,8 +762,9 @@ octant, centre at top left):
 ```
 
 RMS 1.1%, largest −3.0%, from 6.0% and +13%. The eigenvalue at this state
-is 0.99815 at 1300 ppm. With the measured boron worth (−10.77 pcm/ppm) it
-becomes about −23 pcm at the measured 1285 ppm. All the core results of
+is 0.99815 at 1300 ppm. At the measured 1285 ppm (section "Soluble
+boron") it is 0.99967, 23 pcm below KENO's 0.999899, and the map is the
+same (RMS 1.1%, largest −3.3%). All the core results of
 this chapter's baffle sections are with these factors (the uniform core
 of "Results" has a water reflector and keeps the older constants without
 them).
@@ -774,7 +774,9 @@ inserts each bank fully, alone, at zero power. This is how VERA's KENO
 reference is defined: each bank with the others withdrawn
 [[VERA](#ref-vera) Problem 5, "Reference solution results and measured data"]. The measured worths come
 from rod swap against bank D, inferred with KENO shadow factors, at
-1170 ppm. VERA calls the boron a secondary effect (2 pcm on bank D):
+1170 ppm. VERA calls the boron a secondary effect (2 pcm on bank D). The
+table below is at 1300 ppm, from before the boron axis; "Soluble boron"
+repeats it at 1170 ppm:
 
 | bank | this code (pcm) | KENO | difference | measured | difference | no reflector ADF |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -809,6 +811,161 @@ from rod swap against bank D, inferred with KENO shadow factors, at
   is within 3%. KENO itself is 2.9% high on the total. Part of our
   apparent agreement with the measurement is the 1.7% our rods are weak.
 
+## Soluble boron
+
+Until here every fuel table had one boron value, 1300 ppm, so the core
+could only be run at 1300 ppm. The plant does the opposite: it holds
+$k = 1$ and *reads off* the boron. The critical boron concentration is
+the quantity a core designer predicts and a start-up test measures first.
+To compute it the tables need boron as a variable.
+
+**What boron does.** Natural boron is 19.9% B-10, whose (n,α) cross
+section is 3844 b at 0.0253 eV (this code's 0 K table) and falls as $1/v$: 1922 b
+at four times the energy. Dissolved in the water
+it is spread uniformly through the moderator, so it acts almost
+everywhere the thermal neutrons are, and nearly in proportion to its
+concentration: its macroscopic cross section is
+$\Sigma_B \propto \rho_\text{water}\cdot c_B$ (ppm by weight). That
+makes it a gentle, linear control: a few hundred ppm change the
+reactivity by a few thousand pcm, almost in a straight line. Two table
+nodes, 1000 and 1300 ppm, bracket everything a zero-power or at-power
+cycle-1 state needs (1170–1300 ppm), and the multilinear interpolation of
+chapter 20 makes the constants linear in between.
+
+**The matrices.** `boron_ppm = [1000.0, 1300.0]` in every `[branches]`
+of `wbn1-fuel-*.toml` (unrodded, Pyrex, Ag-In-Cd, B₄C) turns each 2 × 2 ×
+2 matrix into 2 × 2 × 2 × 2. The driver keeps the 8 finished 1300-ppm
+points (chapter 20, "The driver") and runs only the 8 new ones: 128
+assembly calculations, about 25 minutes each with two running side by
+side. The baffle reflector is rerun at both values too. The full tensor
+product matters: boron and water density do not act independently, since
+the boron comes with the water. Their cross term is the moderator
+coefficient's sign.
+
+**Lattice coefficients.** From the tables, at fuel 600 K, water 565 K and
+0.743 g/cm³ (the boron worth is $\Delta\rho/\Delta c_B$ between the
+nodes; the total moderator temperature coefficient combines the water
+temperature and density branches with $d\rho_w/dT = -0.00191$ g/cm³/K from
+IF97 at 565 K):
+
+| lattice | boron worth (pcm/ppm) | MTC at 1000 ppm (pcm/K) | MTC at 1300 ppm (pcm/K) |
+| --- | --- | --- | --- |
+| 2.11% | −11.8 | +7.6 | +16.1 |
+| 2.619% | −9.8 | +1.6 | +8.7 |
+| 3.10% | −8.4 | −2.3 | +3.9 |
+| 2.619% + 16 / 20 Pyrex | −9.1 / −9.0 | −14.9 / −18.7 | −8.0 / −11.9 |
+| 3.10% + 8 / 12 / 16 / 24 Pyrex | −8.2 / −8.0 / −7.9 / −7.6 | −9.4 / −12.9 / −16.3 / −22.7 | −3.3 / −6.9 / −10.3 / −16.8 |
+| 2.619% + Ag-In-Cd | −9.4 | −61.8 | −54.6 |
+
+* **The worth falls with enrichment.** A ppm of boron removes a share of
+  the thermal absorptions. With more U-235 the fuel's share is larger and
+  each ppm takes less: −11.8 pcm/ppm at 2.11%, −8.4 at 3.10%.
+* **Absorbers shadow the boron.** Pyrex and control rods take thermal
+  neutrons the boron would otherwise have absorbed, and they depress the
+  thermal flux in the water around them. The 3.10% boron worth falls from
+  −8.4 to −7.6 pcm/ppm with 24 Pyrex rods.
+* **The worth follows the water density.** At 0.661 g/cm³ it is about 10%
+  smaller than at 0.743: the same ppm means fewer boron atoms per cm³.
+* **300 ppm move every MTC by 6–9 pcm/K.** When the water heats up it
+  expands and pushes out boron along with hydrogen. Less hydrogen costs
+  reactivity; less boron gains it. The more boron, the larger the gain,
+  so the coefficient climbs with the concentration. The 3.10% lattice
+  changes sign between 1000 and 1300 ppm. A core designer must keep the
+  coefficient negative at power, which caps the boron a fresh core may
+  carry. Burnable absorbers are the way out: they hold down the same
+  excess reactivity without making the MTC positive.
+
+**The search.** `feedback.core.critical_boron` finds the boron that
+makes $k = 1$ by the secant method on the reactivity $\rho = 1 - 1/k$,
+starting from 1000 and 1300 ppm. Since $\rho$ is nearly linear in $c_B$,
+the third solve already lands within 0.1 ppm, and the search stops when a
+step is below 0.05 ppm (4–5 core solves). `python -m fission.feedback
+wbn1-pyrex --power 0 --critical-boron` runs it at zero power; with
+`--power` the search wraps the whole feedback iteration, so the Doppler
+and water temperatures follow every new boron value; `--boron PPM` sets a
+concentration directly.
+
+**Results for the Pyrex core** (zero power: fuel and water at 565 K):
+
+* **Critical boron 1291.6 ppm**, measured 1291 [[VERA](#ref-vera) Table
+  18; the plant measured 1299 ppm at 19.78 at% B-10, VERA converts it to
+  19.9 at%]. KENO's $k$ at 1291 ppm is 1.000321, ours 1.000056 (Table
+  P5-6, case 2), so KENO itself would find about 1294 ppm.
+* **Differential boron worth −10.13 pcm/ppm** between 1170 and 1291 ppm
+  (the interval VERA uses: the all-rods-out critical and the dilution
+  endpoint). KENO −10.21 ± 0.02 (−0.8%), measured −10.77 (−6%) [[VERA](#ref-vera)
+  Table P5-7]. KENO itself is 5% low against the plant.
+* **The isothermal temperature coefficient** at the measured 1291 ppm
+  (Table P5-6, cases 20 and 21, 560 and 570 K) is **−3.36 pcm/°F**, KENO
+  −3.19 (+5%), measured −2.17. At 1300 ppm (section "Burnable
+  absorbers") it was −3.24: 9 ppm less boron make it 0.1 pcm/°F more
+  negative, as the lattice table says.
+* **At power** the same search gives **1245.3 ppm at 50% and 1190.3 ppm
+  at 100%**. The power defect (Doppler plus warmer, thinner water) is
+  made up by 101 ppm less boron. A plant at full power needs less still,
+  once the fission product xenon-135 has built up; that needs the
+  depletion of chapter 23, and there is no xenon here.
+* **Without Pyrex** (`wbn1-zoned`) the core would be critical at about
+  **2050 ppm** at zero power. That is 750 ppm beyond the upper table node,
+  so the constants are extrapolated and the number is only indicative.
+  But with every lattice's MTC rising by 2–3 pcm/K per 100 ppm, such a
+  core would have a strongly positive moderator coefficient. That is why
+  cycle 1 carries 1712 Pyrex rods.
+
+**The start-up tests, case by case.** VERA lists the zero-power physics
+tests of cycle 1 as 32 core states, each with its own boron, temperature
+and bank positions (Table P5-2), and gives the CE KENO-VI eigenvalue of
+each (Table P5-6): the initial criticality (1285 ppm, bank D at 167
+steps), the all-rods-out critical (1291 ppm), the eight rod-swap
+criticals (one bank in, bank D at its measured critical position,
+1170 ppm), each bank alone at 1170 ppm, the two ITC states and bank D
+stepped out at 1230 ppm. With a boron axis every case runs at its own
+boron: `python -m fission.feedback.zppt wbn1-rods` (module
+`feedback.zppt`; each case is `core.isothermal` at its state).
+
+* **All 32 eigenvalues are within −40..+28 pcm of KENO**: mean −20 pcm,
+  standard deviation 16 pcm. The ten criticals (cases 1–10), which the
+  plant measured at $k = 1$, come out between 0.99865 and 1.00006 here,
+  and KENO's between 0.99880 and 1.00032. Most of the difference is a constant offset of
+  20–30 pcm, the same one the rodless cases show. Only the cases with SC
+  or SD inserted stand out (+4 to +28 pcm): those two banks are 8% weak.
+* **Initial criticality.** Bank D at 167 steps is critical at **1281.7
+  ppm** (`--bank D=167 --critical-boron`), against the measured 1285. At
+  1285 ppm $k$ = 0.99967, 23 pcm below KENO's 0.999899, and the power map
+  against KENO's Figure P5-6 stays at RMS 1.1%, largest −3.3%.
+* **Bank worths at the measured 1170 ppm**, each bank alone against all
+  rods out (cases 11–19), the way Table P5-7 defines KENO's:
+
+  | bank | this code (pcm) | KENO | difference | at 1300 ppm (previous table) |
+  | --- | --- | --- | --- | --- |
+  | D | 1371 | 1386 | −1.1% | −1.3% |
+  | A | 878 | 898 | −2.2% | −4.1% |
+  | C | 967 | 984 | −1.8% | −2.6% |
+  | SB | 1053 | 1066 | −1.3% | −1.0% |
+  | B | 875 | 875 | −0.0% | +2.5% |
+  | SC, SD | 458 | 499 | −8.3% | −6.6% |
+  | SA | 449 | 447 | +0.6% | +5.0% |
+  | total | 6508 | 6655 | −2.2% | −1.7% |
+
+  Against the measured worths (Table P5-7) the total is +0.6%. At the
+  right boron the spread of the banks other than SC and SD falls from
+  −4..+5% to −2..+1%. The central banks (A, C, D) gained and the
+  peripheral ones (B, SA) lost: with 130 ppm less boron the 2.11% fuel
+  in the core's interior gains more reactivity than the 3.10% fuel at
+  the edge (−11.8 against −8.4 pcm/ppm in the lattice table), so the flux
+  moves inwards, and a bank's worth follows the square of the flux where it
+  sits. VERA's "secondary effect" of the boron is 2 pcm for bank D alone
+  at fixed flux shape. Across the core the shape matters more.
+* **The bank D integral curve** (cases 22–32, 1230 ppm): the worth
+  withdrawn from 0 steps is 40, 182, 462, 753, 977, 1136, 1248, 1321,
+  1361 and 1370 pcm at 23, 46, …, 230 steps, against KENO's 41, 182,
+  466, 758, 983, 1144, 1257, 1333, 1372 and 1384. The S shape, small at
+  both ends where the flux is low and steep in the middle, is the axial
+  flux shape weighted twice. The difference grows steadily with the
+  withdrawal, to −1.0% for the whole bank. The moving tip is always the
+  Ag-In-Cd zone, so this is the weak Ag-In-Cd of the single assembly
+  (−0.9%) seen again.
+
 ## Further reading
 
 * [[IAPWS-IF97](#ref-if97)] (free): the water formulation, region 1.
@@ -821,7 +978,7 @@ from rod swap against bank D, inferred with KENO shadow factors, at
 * [[VERA](#ref-vera)] (free): Watts Bar core data (Figure 9, Tables 1, 18,
   P6-1); the Pyrex rod and its patterns (Table 6, Figure 5, Table P2-4),
   KENO references (Table P2-5, Figures P2-7, P2-8) and the start-up tests
-  (Table P5-7); the control rods (Table 8, Figure 10), KENO for 2G/2H
+  (Tables P5-2, P5-6, P5-7); the control rods (Table 8, Figure 10), KENO for 2G/2H
   (Figures P2-9, P2-10) and the core's power map (Figure P5-6).
 * [[Smith](#ref-smith1980)] (free to read): discontinuity factors, the
   equivalence behind the reflector factors.
@@ -829,6 +986,7 @@ from rod swap against bank D, inferred with KENO shadow factors, at
   [`feedback/convection.py`](../../src/fission/feedback/convection.py),
   [`feedback/fuel.py`](../../src/fission/feedback/fuel.py),
   [`feedback/core.py`](../../src/fission/feedback/core.py) (`make feedback`),
+  [`feedback/zppt.py`](../../src/fission/feedback/zppt.py) (the start-up tests),
   [`fewgroup/reflector.py`](../../src/fission/fewgroup/reflector.py)
   (`make reflector`), `models/wbn1-core.toml`, `models/wbn1-zoned.toml`
   (with `wbn1-fuel-*.toml` and `wbn1-baffle.toml`), `models/wbn1-pyrex.toml`,

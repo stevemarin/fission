@@ -143,7 +143,8 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   points = tensor product, C order, names `<name>-i-j-k-l`; loader checks
   increasing values containing the base value). `run_matrix` (solver
   infinite | moc, B1 + condense per point, table rewritten after each point
-  and resumed if settings match, shaped libraries of a point deleted
+  and resumed if settings match; `_carry_over` keeps old points on a
+  changed grid (axes-only change), shaped libraries of a point deleted
   after it), `Table.array(key)` (grid-shaped), `coefficients` (d rho/dx at
   the base). `fewgroup.homogenize.from_mixture` = constants of the infinite
   medium (chi weighted by nuclide production; keeps k to 1e-15).
@@ -186,7 +187,11 @@ make show NUC=U235 | make scan NUC=U238 E=6.674 | make rm | make doppler | make 
   diffusion of each side); the vera-p1 water reflector table predates it
   (ADF 1). Control rods: `model.spec.ControlRod`/`Banks`,
   `Lattice.rodded`, `Material.shielded`; `nodal.mesh.stacks/parse_banks`;
-  `feedback.core.bank_worths`, `isothermal` (`--itc`).
+  `feedback.core.bank_worths`, `isothermal` (`--itc`). Boron:
+  `feedback.core.critical_boron` (secant on rho), `feedback --boron PPM`,
+  `--critical-boron` (any --power/--bank).
+  `feedback.zppt`: VERA P5 start-up tests (Tables P5-2/P5-6, 32 cases
+  vs KENO k; bank worths, DBW, ITC by differences).
 - `src/fission/pincell/`: `infinite.py` (homogeneous mixture, eigen solve,
   four factors), `run.py` (driver on a model lattice + state; `UNSUPPORTED`
   nuclides; NR self-shielding via a flux shape 1/Sigma_t(E)).
@@ -388,7 +393,16 @@ self-shielding (C1).
     f_refl/f_fuel = 1.269/0.258) -> RMS 1.1%. Bank worths vs KENO -7..+5%,
     total -1.7% (measured +1.1%). Pyrex core HZP now 0.99915 -> critical
     boron 1292 vs 1291 ppm; ITC -3.24 pcm/F.
-  - Next: open (boron axis / critical search, depletion, full core)
+  - Boron axis (ch. 22 "Soluble boron"): `boron_ppm = [1000, 1300]` in
+    all 16 wbn1-fuel-* matrices + baffle reflector (128 new MOC points,
+    old ones carried over). Pyrex core HZP critical 1291.6 ppm (measured
+    1291), DBW -10.13 pcm/ppm (KENO -10.21, measured -10.77), ITC at 1291
+    -3.36 pcm/F (KENO -3.19); 50%/100% power 1245/1190 ppm. Unrodded VERA
+    P5-6: all 32 cases -40..+28 pcm vs KENO (`python -m fission.feedback.zppt`);
+    D@167 critical 1281.7 vs 1285 ppm; bank worths at 1170 vs KENO -2..+1%
+    (SC/SD -8.3%, quarter symmetry), total -2.2%. Lattice MTC +6..9 pcm/K
+    per 300 ppm.
+  - Next: open (depletion, full core)
 - **M: model building** (describe the reactor once, as data; generate every calculation from it)
   - M1 declarative model file: TOML layers + states, number densities, homogenization (done)
   - M2 state-matrix driver (done, ch. 20): `make branches`; VERA matrix
